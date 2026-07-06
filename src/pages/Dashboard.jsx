@@ -23,11 +23,7 @@ export default function Dashboard() {
     try { return JSON.parse(localStorage.getItem('gym_item_sales') || '{}') } catch { return {} }
   })
 
-  useEffect(() => { fetchDashboardData() }, [])
-
-  useEffect(() => {
-    localStorage.setItem('gym_item_sales', JSON.stringify(itemSales))
-  }, [itemSales])
+  // --- DEFINITIONS MOVED ABOVE USEFFECT ---
 
   const fetchDashboardData = async () => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -47,6 +43,11 @@ export default function Dashboard() {
       ])
     }
   }
+
+  useEffect(() => { fetchDashboardData() }, [])
+  useEffect(() => { localStorage.setItem('gym_item_sales', JSON.stringify(itemSales)) }, [itemSales])
+
+  // --- END MOVED DEFINITIONS ---
 
   const handleRenew = (member) => { setRenewMember(member); setIsModalOpen(true) }
 
