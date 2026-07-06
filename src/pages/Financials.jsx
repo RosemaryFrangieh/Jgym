@@ -110,15 +110,7 @@ export default function Financials() {
   const [editingItem, setEditingItem] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => { fetchFinancials() }, [])
-
-  useEffect(() => {
-    localStorage.setItem('gym_shop_items', JSON.stringify(items))
-  }, [items])
-
-  useEffect(() => {
-    localStorage.setItem('gym_item_sales', JSON.stringify(itemSales))
-  }, [itemSales])
+  // --- DEFINITIONS MOVED ABOVE USEFFECT ---
 
   const fetchFinancials = async () => {
     const { data } = await supabase.from('members').select('*').order('created_at', { ascending: false })
@@ -131,6 +123,12 @@ export default function Financials() {
       setRecent(data.slice(0, 5))
     }
   }
+
+  useEffect(() => { fetchFinancials() }, [])
+  useEffect(() => { localStorage.setItem('gym_shop_items', JSON.stringify(items)) }, [items])
+  useEffect(() => { localStorage.setItem('gym_item_sales', JSON.stringify(itemSales)) }, [itemSales])
+
+  // --- END MOVED DEFINITIONS ---
 
   const handleSaveItem = (data) => {
     if (editingItem !== null) {

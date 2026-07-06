@@ -183,7 +183,12 @@ export default function Accounts() {
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [toast, setToast] = useState(null)
 
-  useEffect(() => { fetchAccounts() }, [])
+  // --- DEFINITIONS MOVED ABOVE USEFFECT ---
+  
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const fetchAccounts = async () => {
     setPageLoading(true)
@@ -196,10 +201,9 @@ export default function Accounts() {
     setPageLoading(false)
   }
 
-  const showToast = (msg, type = 'success') => {
-    setToast({ msg, type })
-    setTimeout(() => setToast(null), 3000)
-  }
+  useEffect(() => { fetchAccounts() }, [])
+
+  // --- END MOVED DEFINITIONS ---
 
   const handleSave = async (formData) => {
     setSaving(true)

@@ -29,17 +29,6 @@ function PageGuard({ path, children }) {
   return children
 }
 
-// Redirect to first allowed page if authed
-function AuthRedirect() {
-  const { user, loading } = useAuth()
-
-  if (loading) return null
-  if (!user) return <Navigate to="/login" replace />
-
-  // Already authed, go to login → redirect to app
-  return <Navigate to="/" replace />
-}
-
 function AppRoutes() {
   const { user, loading } = useAuth()
 
