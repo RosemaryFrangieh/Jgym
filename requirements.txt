@@ -1,0 +1,14 @@
+create table accounts (
+  id uuid primary key default gen_random_uuid(),
+  username text unique not null,
+  password text not null,
+  role text not null default 'user',
+  status text not null default 'active',
+  allowed_pages text[] default '{}',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- Seed the default admin
+insert into accounts (username, password, role, status, allowed_pages)
+values ('admin', 'admin123', 'admin', 'active', array['/', '/memberships', '/financials']);
