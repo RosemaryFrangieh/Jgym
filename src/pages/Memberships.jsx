@@ -337,13 +337,13 @@ export default function Memberships() {
     setLoading(false)
   }, [filters, selectedMonth])
 
-  useEffect(() => { fetchMembers() }, [fetchMembers])
+  useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
 
-  // Separated setPage(1) into its own useEffect tied to filters/month
-  // This prevents the React "set-state-in-effect" cascading render warning
+  // Reset to current month when component mounts (auto monthly reset)
   useEffect(() => {
-    setPage(1)
-  }, [filters, selectedMonth])
+    const now = toYearMonth(new Date())
+    setSelectedMonth(now)
+  }, [])
 
   const enrichedMembers = members.map(m => ({
     ...m,

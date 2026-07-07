@@ -14,18 +14,6 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const getDestination = (account, from) => {
-    if (account.role === 'admin') {
-      return from && from !== '/login' ? from : '/'
-    }
-    const allowed = account.allowedPages || []
-    if (from && allowed.includes(from)) {
-      return from
-    }
-    const first = ALL_PAGES.find(p => allowed.includes(p.path))
-    return first ? first.path : '/access-denied'
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -45,7 +33,21 @@ export default function Login() {
 
     // Redirect to the page they tried to visit, or their first allowed page
     const from = location.state?.from?.pathname
-    const destination = getDestination(result.account, from)
+    const account = result.account
+
+    let destination = '/'
+    if (account.role === 'admin') {
+      destination = from && from !== '/login' ? from : '/'
+    } else {
+      const allowed = account.allowedPages || []
+      if (from && allowed.includes(from)) {
+        destination = from
+      } else {
+        // go to first allowed page
+        const first = ALL_PAGES.find(p => allowed.includes(p.path))
+        destination = first ? first.path : '/access-denied'
+      }
+    }
 
     navigate(destination, { replace: true })
   }
