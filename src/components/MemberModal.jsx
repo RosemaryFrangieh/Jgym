@@ -1,7 +1,8 @@
 // membermodel.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { X } from 'lucide-react'
+import { X, Printer, Check } from 'lucide-react'
+import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 
 const FIXED_PRICES = {
   daily: 7,
@@ -21,6 +22,7 @@ export default function MemberModal({ member, onClose }) {
   const [amountPaid, setAmountPaid] = useState(0)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [savedMember, setSavedMember] = useState(null) // set after a successful save, shows the receipt screen
   const isCustom = formData.subscription_type === 'custom'
 
   useEffect(() => {
@@ -105,7 +107,42 @@ export default function MemberModal({ member, onClose }) {
       return
     }
 
-    onClose()
+    setSavedMember(payload)
+  }
+
+  if (savedMember) {
+    return (
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+        <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-12 h-12 rounded-full bg-electric-green/20 flex items-center justify-center mb-3">
+              <Check size={28} className="text-electric-green" />
+            </div>
+            <h3 className="text-xl font-bold text-white">Member Saved</h3>
+            <p className="text-slate-400 text-sm mt-1">
+              {savedMember.first_name} {savedMember.last_name} — ${Number(savedMember.amount_paid).toFixed(2)} paid
+            </p>
+          </div>
+
+          <button
+            onClick={() => printReceiptViaRawBT(savedMember)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 mb-3"
+          >
+            <Printer size={20} /> Print Receipt
+          </button>
+          <p className="text-xs text-slate-500 text-center mb-4">
+            Sends the receipt to RawBT, which relays it to your paired Bluetooth printer.
+          </p>
+
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
