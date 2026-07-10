@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check } from 'lucide-react'
+import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
 const COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
@@ -13,6 +13,31 @@ const ITEM_COLORS = [
   'bg-pink-500/10 text-pink-400 border-pink-500/20',
   'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
 ]
+
+// Local date key (YYYY-MM-DD) in user's timezone
+const localDateKey = (d) => {
+  const dt = d instanceof Date ? d : new Date(d)
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const day = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+const todayKey = () => localDateKey(new Date())
+
+// Migrate old { itemId: count } format to new { 'YYYY-MM-DD': { itemId: count } }
+function migrateItemSales(raw) {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const keys = Object.keys(parsed)
+    if (keys.length === 0) return {}
+    if (/^\d{4}-\d{2}-\d{2}$/.test(keys[0])) return parsed
+    return { [todayKey()]: parsed }
+  } catch {
+    return {}
+  }
+}
 
 function ItemModal({ item, onClose, onSave }) {
   const [form, setForm] = useState(item || { name: '', price: '', unit: 'piece', stock: '' })
@@ -95,48 +120,98 @@ function ItemModal({ item, onClose, onSave }) {
   )
 }
 
+const FILTER_OPTIONS = [
+  { id: 'day', label: 'Today' },
+  { id: 'week', label: 'This Week' },
+  { id: 'month', label: 'This Month' },
+  { id: 'custom', label: 'Custom' },
+]
+
 export default function Financials() {
   const [stats, setStats] = useState({ total: 0, daily: 0, weekly: 0, monthly: 0 })
   const [recent, setRecent] = useState([])
+  const [filterType, setFilterType] = useState('day')
+  const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
 
-  // Items for sale + sales tracking
   const [items, setItems] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gym_shop_items') || '[]') } catch { return [] }
   })
-  const [itemSales, setItemSales] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('gym_item_sales') || '{}') } catch { return {} }
-  })
+  const [itemSales, setItemSales] = useState(() => migrateItemSales(localStorage.getItem('gym_item_sales')))
   const [showItemModal, setShowItemModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => { fetchFinancials() }, [])
+  // Re-read sales from localStorage when page is focused (in case Dashboard changed it)
+  useEffect(() => {
+    const onFocus = () => setItemSales(migrateItemSales(localStorage.getItem('gym_item_sales')))
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  // Compute the active date range based on filter
+  const getRange = () => {
+    const today = new Date()
+    const todayStr = todayKey()
+    if (filterType === 'day') return { start: todayStr, end: todayStr }
+    if (filterType === 'week') {
+      const start = new Date(today)
+      start.setDate(today.getDate() - 6)
+      return { start: localDateKey(start), end: todayStr }
+    }
+    if (filterType === 'month') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      return { start: localDateKey(start), end: todayStr }
+    }
+    return { start: customRange.start || todayStr, end: customRange.end || todayStr }
+  }
+
+  const range = getRange()
+
+  const inRange = (isoStr) => {
+    if (!isoStr) return false
+    const d = localDateKey(new Date(isoStr))
+    return d >= range.start && d <= range.end
+  }
+
+  const fetchFinancials = async () => {
+    const { data } = await supabase.from('members').select('*').order('created_at', { ascending: false })
+    if (data) {
+      const filtered = data.filter(m => inRange(m.created_at))
+      const total = filtered.reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+      const daily = filtered.filter(m => m.subscription_type === 'daily').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+      const weekly = filtered.filter(m => m.subscription_type === 'weekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+      const monthly = filtered.filter(m => m.subscription_type === 'monthly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+      setStats({ total, daily, weekly, monthly })
+      setRecent(filtered.slice(0, 8))
+    }
+  }
+
+  useEffect(() => { fetchFinancials() }, [filterType, customRange.start, customRange.end])
 
   useEffect(() => {
     localStorage.setItem('gym_shop_items', JSON.stringify(items))
   }, [items])
 
-  useEffect(() => {
-    localStorage.setItem('gym_item_sales', JSON.stringify(itemSales))
-  }, [itemSales])
-
-  const fetchFinancials = async () => {
-    const { data } = await supabase.from('members').select('*').order('created_at', { ascending: false })
-    if (data) {
-      const total = data.reduce((sum, m) => sum + parseFloat(m.amount_paid), 0)
-      const daily = data.filter(m => m.subscription_type === 'daily').reduce((sum, m) => sum + parseFloat(m.amount_paid), 0)
-      const weekly = data.filter(m => m.subscription_type === 'weekly').reduce((sum, m) => sum + parseFloat(m.amount_paid), 0)
-      const monthly = data.filter(m => m.subscription_type === 'monthly').reduce((sum, m) => sum + parseFloat(m.amount_paid), 0)
-      setStats({ total, daily, weekly, monthly })
-      setRecent(data.slice(0, 5))
-    }
+  // Get sales for an item within the active range (aggregates all dates in range)
+  const getSales = (id) => {
+    return Object.entries(itemSales).reduce((sum, [dateKey, dayData]) => {
+      if (dateKey >= range.start && dateKey <= range.end) {
+        return sum + (dayData[id] ?? 0)
+      }
+      return sum
+    }, 0)
   }
+
+  const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
+  const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
+  const totalItemsSold = items.reduce((sum, item) => sum + getSales(item.id), 0)
+  const grandTotal = stats.total + totalItemRevenue
 
   const handleSaveItem = (data) => {
     if (editingItem !== null) {
       setItems(prev => prev.map((it, i) => i === editingItem ? { ...it, ...data } : it))
     } else {
-      setItems(prev => [...prev, { id: Date.now(), ...data, sales: 0 }])
+      setItems(prev => [...prev, { id: Date.now(), ...data }])
     }
     setShowItemModal(false)
     setEditingItem(null)
@@ -146,11 +221,6 @@ export default function Financials() {
     setItems(prev => prev.filter((_, i) => i !== idx))
     setDeleteConfirm(null)
   }
-
-  const getSales = (id) => itemSales[id] ?? 0
-  const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
-  const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
-  const grandTotal = stats.total
 
   const pieData = [
     { name: 'Daily Subs', value: stats.daily },
@@ -164,9 +234,55 @@ export default function Financials() {
     sales: getSales(it.id),
   }))
 
+  const dateInputClass = "bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue transition-colors [color-scheme:dark]"
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-white">Financial Overview</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <h2 className="text-2xl font-bold text-white">Financial Overview</h2>
+        <div className="text-slate-400 text-sm flex items-center gap-2">
+          <Calendar size={14} />
+          <span>Range: <span className="text-white font-medium">{range.start}</span> → <span className="text-white font-medium">{range.end}</span></span>
+        </div>
+      </div>
+
+      {/* Date Filter Bar */}
+      <div className="bg-navy-800 p-4 rounded-xl border border-navy-700 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Calendar size={18} className="text-slate-400" />
+          <span className="text-slate-300 text-sm font-medium">Filter:</span>
+        </div>
+        <div className="flex gap-1 bg-navy-900 rounded-lg p-1">
+          {FILTER_OPTIONS.map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => setFilterType(opt.id)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                filterType === opt.id ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {filterType === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={customRange.start}
+              onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))}
+              className={dateInputClass}
+            />
+            <span className="text-slate-500">→</span>
+            <input
+              type="date"
+              value={customRange.end}
+              onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))}
+              className={dateInputClass}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
@@ -174,7 +290,7 @@ export default function Financials() {
           <div>
             <p className="text-blue-100 text-sm">Grand Total Revenue</p>
             <h3 className="text-3xl font-bold text-white">${grandTotal.toFixed(2)}</h3>
-            <p className="text-blue-200 text-xs mt-1">Total Memberships</p>
+            <p className="text-blue-200 text-xs mt-1">Memberships + Shop (in range)</p>
           </div>
           <Wallet size={40} className="text-white/80" />
         </div>
@@ -190,6 +306,7 @@ export default function Financials() {
           <div>
             <p className="text-slate-400 text-sm">Shop Revenue</p>
             <h3 className="text-2xl font-bold text-white">${totalItemRevenue.toFixed(2)}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">{totalItemsSold} item{totalItemsSold !== 1 ? 's' : ''} sold</p>
           </div>
         </div>
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
@@ -204,9 +321,9 @@ export default function Financials() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Full Revenue Breakdown</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Revenue Breakdown</h3>
           {pieData.length === 0 ? (
-            <div className="flex items-center justify-center h-[300px] text-slate-500 text-sm">No revenue data yet.</div>
+            <div className="flex items-center justify-center h-[300px] text-slate-500 text-sm">No revenue data for this range.</div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -233,7 +350,10 @@ export default function Financials() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#94a3b8" tickFormatter={v => `$${v}`} />
-                <Tooltip formatter={(v) => `$${v.toFixed(2)}`} contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                <Tooltip
+                  formatter={(v, name) => name === 'revenue' ? `$${v.toFixed(2)}` : `${v} sold`}
+                  contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }}
+                />
                 <Bar dataKey="revenue" fill="#a855f7" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -272,7 +392,7 @@ export default function Financials() {
 
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Transactions</h3>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
             {recent.map(m => (
               <div key={m.id} className="flex justify-between items-center border-b border-navy-700 pb-3">
                 <div>
@@ -282,7 +402,7 @@ export default function Financials() {
                 <span className="text-electric-green font-semibold">+${m.amount_paid}</span>
               </div>
             ))}
-            {recent.length === 0 && <p className="text-slate-500 text-center py-8">No transactions yet.</p>}
+            {recent.length === 0 && <p className="text-slate-500 text-center py-8">No transactions in this range.</p>}
           </div>
         </div>
       </div>
@@ -294,7 +414,7 @@ export default function Financials() {
             <div className="p-2 bg-electric-green/10 rounded-lg text-electric-green"><ShoppingBag size={22} /></div>
             <div>
               <h3 className="text-lg font-semibold text-white">Items for Sale</h3>
-              <p className="text-slate-500 text-sm">{items.length} item{items.length !== 1 ? 's' : ''} listed</p>
+              <p className="text-slate-500 text-sm">{items.length} item{items.length !== 1 ? 's' : ''} listed · {totalItemsSold} sold in range</p>
             </div>
           </div>
           <button
@@ -315,6 +435,8 @@ export default function Financials() {
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 p-6">
             {items.map((item, idx) => {
               const colorClass = ITEM_COLORS[idx % ITEM_COLORS.length]
+              const soldInRange = getSales(item.id)
+              const revInRange = getItemRevenue(item)
               return (
                 <div key={item.id} className="bg-navy-900 rounded-xl p-5 border border-navy-700 hover:border-navy-600 transition-colors group">
                   <div className="flex items-start justify-between mb-3">
@@ -334,13 +456,25 @@ export default function Financials() {
                   </div>
                   <h4 className="text-white font-semibold text-base mb-1 truncate">{item.name}</h4>
                   <p className="text-2xl font-bold text-electric-green">${parseFloat(item.price).toFixed(2)}</p>
+
+                  {/* Sold in range stats */}
+                  <div className="mt-3 pt-3 border-t border-navy-700 grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-slate-500 text-xs">Sold (range)</p>
+                      <p className="text-white font-semibold text-sm">{soldInRange}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 text-xs">Revenue (range)</p>
+                      <p className="text-electric-green font-semibold text-sm">${revInRange.toFixed(2)}</p>
+                    </div>
+                  </div>
+
                   {item.stock !== null && item.stock !== undefined && (
                     <p className={`text-xs mt-2 font-medium ${item.stock === 0 ? 'text-red-400' : item.stock < 5 ? 'text-orange-400' : 'text-slate-500'}`}>
                       {item.stock === 0 ? '⚠ Out of stock' : `${item.stock} in stock`}
                     </p>
                   )}
 
-                  {/* Delete Confirm Inline */}
                   {deleteConfirm === idx && (
                     <div className="mt-3 pt-3 border-t border-navy-700">
                       <p className="text-red-400 text-xs mb-2">Remove this item?</p>

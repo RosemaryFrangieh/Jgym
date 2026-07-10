@@ -24,27 +24,15 @@ export function computeEndDate(member) {
   return start.toISOString().split('T')[0]
 }
 
-// Returns 'YYYY-MM' for a given Date
-function toYearMonth(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+// Local date key (YYYY-MM-DD)
+const localDateKey = (d) => {
+  const dt = d instanceof Date ? d : new Date(d)
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const day = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
-
-// Returns a display label like "June 2026"
-function formatYearMonth(ym) {
-  const [y, m] = ym.split('-')
-  return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-}
-
-// Returns first and last ISO date strings of a given 'YYYY-MM'
-function monthBounds(ym) {
-  const [y, m] = ym.split('-').map(Number)
-  const first = new Date(y, m - 1, 1)
-  const last  = new Date(y, m, 0)
-  return {
-    from: first.toISOString().split('T')[0],
-    to:   last.toISOString().split('T')[0],
-  }
-}
+const todayKey = () => localDateKey(new Date())
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -52,6 +40,12 @@ const PAGE_SIZE = 10
 const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'custom']
 const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all' }
 const FIXED_PRICES = { daily: 5, weekly: 25, biweekly: 40, triweekly: 55, monthly: 50 }
+const DATE_FILTER_OPTIONS = [
+  { id: 'day', label: 'Today' },
+  { id: 'week', label: 'This Week' },
+  { id: 'month', label: 'This Month' },
+  { id: 'custom', label: 'Custom' },
+]
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 
@@ -270,39 +264,6 @@ function RenewModal({ member, onClose, onSuccess }) {
   )
 }
 
-// ─── Month Navigator ──────────────────────────────────────────────────────────
-
-function MonthNavigator({ value, onChange }) {
-  const now = toYearMonth(new Date())
-
-  const prev = () => {
-    const [y, m] = value.split('-').map(Number)
-    const d = new Date(y, m - 2, 1)
-    onChange(toYearMonth(d))
-  }
-  const next = () => {
-    const [y, m] = value.split('-').map(Number)
-    const d = new Date(y, m, 1)
-    onChange(toYearMonth(d))
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <button onClick={prev} className="p-1.5 rounded-lg bg-navy-900 border border-navy-700 hover:border-slate-500 text-slate-400 hover:text-white transition-colors">
-        <ChevronLeft size={16} />
-      </button>
-      <div className="flex items-center gap-2 px-4 py-1.5 bg-navy-900 border border-navy-700 rounded-lg min-w-[160px] justify-center">
-        <Calendar size={15} className="text-electric-blue" />
-        <span className="text-white text-sm font-medium">{formatYearMonth(value)}</span>
-        {value === now && <span className="text-xs text-electric-blue font-semibold">Current</span>}
-      </div>
-      <button onClick={next} disabled={value >= now} className="p-1.5 rounded-lg bg-navy-900 border border-navy-700 hover:border-slate-500 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-        <ChevronRight size={16} />
-      </button>
-    </div>
-  )
-}
-
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function Memberships() {
@@ -310,23 +271,43 @@ export default function Memberships() {
   const [loading, setLoading]             = useState(true)
   const [search, setSearch]               = useState('')
   const [filters, setFilters]             = useState(DEFAULT_FILTERS)
-  const [selectedMonth, setSelectedMonth] = useState(toYearMonth(new Date()))
   const [page, setPage]                   = useState(1)
   const [isModalOpen, setIsModalOpen]     = useState(false)
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
 
+  // Date filtration state
+  const [dateFilter, setDateFilter] = useState('month') // Default to 'This Month'
+  const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
+
   const fetchMembers = useCallback(async () => {
     setLoading(true)
-    const { from, to } = monthBounds(selectedMonth)
+    
+    const today = new Date()
+    let startStr = todayKey()
+    let endStr = todayKey()
+
+    if (dateFilter === 'week') {
+      const start = new Date(today)
+      start.setDate(today.getDate() - 6) // Rolling 7 days
+      startStr = localDateKey(start)
+      endStr = todayKey()
+    } else if (dateFilter === 'month') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      startStr = localDateKey(start)
+      endStr = todayKey()
+    } else if (dateFilter === 'custom') {
+      startStr = customRange.start || todayKey()
+      endStr = customRange.end || todayKey()
+    }
 
     let query = supabase
       .from('members')
       .select('*')
-      .gte('created_at', `${from}T00:00:00.000Z`)
-      .lte('created_at', `${to}T23:59:59.999Z`)
-      .order('created_at', { ascending: false })
+      .gte('start_date', `${startStr}T00:00:00.000Z`)
+      .lte('start_date', `${endStr}T23:59:59.999Z`)
+      .order('start_date', { ascending: false, nullsFirst: false })
 
     if (filters.subscriptionType !== 'all') {
       query = query.eq('subscription_type', filters.subscriptionType)
@@ -335,15 +316,9 @@ export default function Memberships() {
     const { data, error } = await query
     if (!error) setMembers(data || [])
     setLoading(false)
-  }, [filters, selectedMonth])
+  }, [filters, dateFilter, customRange])
 
   useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
-
-  // Reset to current month when component mounts (auto monthly reset)
-  useEffect(() => {
-    const now = toYearMonth(new Date())
-    setSelectedMonth(now)
-  }, [])
 
   const enrichedMembers = members.map(m => ({
     ...m,
@@ -384,9 +359,10 @@ export default function Memberships() {
     }
   }
 
-  // Monthly totals summary
-  const activeCount     = filteredMembers.filter(m => !m._expired).length
-  const expiredCount    = filteredMembers.filter(m =>  m._expired).length
+  const activeCount  = filteredMembers.filter(m => !m._expired).length
+  const expiredCount = filteredMembers.filter(m =>  m._expired).length
+
+  const dateInputClass = "bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue transition-colors [color-scheme:dark]"
 
   return (
     <div>
@@ -394,23 +370,58 @@ export default function Memberships() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-white">Memberships</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Showing records created in {formatYearMonth(selectedMonth)}</p>
+          <p className="text-slate-400 text-sm mt-0.5">Filter by membership start dates</p>
         </div>
-        <div className="flex items-center gap-3">
-          <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
-          <button
-            onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
-            className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
-          >
-            <Plus size={20} /> Add Member
-          </button>
-        </div>
+        <button
+          onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
+          className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+        >
+          <Plus size={20} /> Add Member
+        </button>
       </div>
 
-      {/* ── Monthly summary cards ── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      {/* ── Date Filter Bar ── */}
+      <div className="bg-navy-800 p-4 rounded-xl border border-navy-700 flex flex-wrap items-center gap-3 mb-6">
+        <div className="flex items-center gap-2">
+          <Calendar size={18} className="text-slate-400" />
+          <span className="text-slate-300 text-sm font-medium">Start Date:</span>
+        </div>
+        <div className="flex gap-1 bg-navy-900 rounded-lg p-1">
+          {DATE_FILTER_OPTIONS.map(opt => (
+            <button
+              key={opt.id}
+              onClick={() => setDateFilter(opt.id)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                dateFilter === opt.id ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {dateFilter === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={customRange.start}
+              onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))}
+              className={dateInputClass}
+            />
+            <span className="text-slate-500">→</span>
+            <input
+              type="date"
+              value={customRange.end}
+              onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))}
+              className={dateInputClass}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ── Summary cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members This Month</p>
+          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members in Range</p>
           <p className="text-2xl font-bold text-white">{loading ? '—' : filteredMembers.length}</p>
         </div>
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
@@ -421,7 +432,6 @@ export default function Memberships() {
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Expired</p>
           <p className="text-2xl font-bold text-red-400">{loading ? '—' : expiredCount}</p>
         </div>
-       
       </div>
 
       {/* ── Filters ── */}
@@ -496,8 +506,8 @@ export default function Memberships() {
             ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={9} className="p-8 text-center">
-                  <p className="text-slate-500">No memberships found for {formatYearMonth(selectedMonth)}.</p>
-                  <p className="text-slate-600 text-sm mt-1">Try navigating to a different month.</p>
+                  <p className="text-slate-500">No memberships found in this date range.</p>
+                  <p className="text-slate-600 text-sm mt-1">Try adjusting the filters above.</p>
                 </td>
               </tr>
             ) : (

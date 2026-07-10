@@ -108,7 +108,7 @@ export function buildReceiptText(member) {
   r += 'Thank you!\n'
 
   // --- Instagram QR code ---
-  r += '\nFollow us on Instagram\n'
+  r += '\n/keep up with us on instagram\n'
   r += buildQRCode('https://www.instagram.com/j_gym_ehden?igsh=ZmkxbG84MjVnMXI0')
   r += '\n'
 

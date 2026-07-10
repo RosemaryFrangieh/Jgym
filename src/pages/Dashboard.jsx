@@ -7,6 +7,30 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 const TABLE_COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
 const UNIT_LABEL = { piece: 'units', kg: 'kg', liter: 'L', session: 'sessions', month: 'months' }
 
+const localDateKey = (d) => {
+  const dt = d instanceof Date ? d : new Date(d)
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const day = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+const todayKey = () => localDateKey(new Date())
+
+// Migrate old { itemId: count } format to new date-keyed format
+function migrateItemSales(raw) {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const keys = Object.keys(parsed)
+    if (keys.length === 0) return {}
+    if (/^\d{4}-\d{2}-\d{2}$/.test(keys[0])) return parsed
+    return { [todayKey()]: parsed }
+  } catch {
+    return {}
+  }
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({ total: 0, active: 0, newThisMonth: 0, expiring: [] })
   const [chartData, setChartData] = useState([
@@ -15,13 +39,10 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [renewMember, setRenewMember] = useState(null)
 
-  // Items for sale
   const [items, setItems] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gym_shop_items') || '[]') } catch { return [] }
   })
-  const [itemSales, setItemSales] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('gym_item_sales') || '{}') } catch { return {} }
-  })
+  const [itemSales, setItemSales] = useState(() => migrateItemSales(localStorage.getItem('gym_item_sales')))
 
   useEffect(() => { fetchDashboardData() }, [])
 
@@ -58,15 +79,20 @@ export default function Dashboard() {
   const getDaysColor = (d) => d === 0 ? 'text-red-500' : d === 1 ? 'text-red-400' : d === 2 ? 'text-orange-400' : 'text-yellow-400'
   const getDaysLabel = (d) => d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `${d} days`
 
-  const getSales = (id) => itemSales[id] ?? 0
+  // Today-only sales — automatically resets to 0 each new day
+  const todaySales = itemSales[todayKey()] ?? {}
+  const getSales = (id) => todaySales[id] ?? 0
   const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
   const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
+  const totalItemsSoldToday = items.reduce((sum, item) => sum + getSales(item.id), 0)
 
   const adjustSales = (id, delta) => {
     setItemSales(prev => {
-      const current = prev[id] ?? 0
+      const tk = todayKey()
+      const td = prev[tk] ?? {}
+      const current = td[id] ?? 0
       const next = Math.max(0, current + delta)
-      return { ...prev, [id]: next }
+      return { ...prev, [tk]: { ...td, [id]: next } }
     })
   }
 
@@ -89,7 +115,6 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Chart */}
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><Calendar size={20} /> Subscription Breakdown</h3>
           <ResponsiveContainer width="100%" height={300}>
@@ -103,7 +128,6 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        {/* Expiring List */}
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><AlertTriangle size={20} className="text-orange-500" /> Expiring Soon</h3>
           <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
@@ -131,13 +155,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Item Revenue Table */}
+      {/* Item Revenue Table - Today only, resets daily */}
       {items.length > 0 && (
         <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
-          <div className="px-6 py-5 border-b border-navy-700 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2"><ShoppingBag size={20} className="text-purple-400" /> Shop Items Revenue</h3>
+          <div className="px-6 py-5 border-b border-navy-700 flex items-center justify-between flex-wrap gap-3">
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              <ShoppingBag size={20} className="text-purple-400" /> Today's Shop Sales
+              <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                {todayKey()} · resets daily
+              </span>
+            </h3>
             <div className="text-right">
-              <p className="text-slate-400 text-xs">Total Shop Revenue</p>
+              <p className="text-slate-400 text-xs">Today's Revenue · {totalItemsSoldToday} item{totalItemsSoldToday !== 1 ? 's' : ''} sold</p>
               <p className="text-electric-green font-bold text-lg">${totalItemRevenue.toFixed(2)}</p>
             </div>
           </div>
@@ -147,7 +176,7 @@ export default function Dashboard() {
                 <tr className="border-b border-navy-700">
                   <th className="text-left text-slate-400 text-xs font-medium px-6 py-3 uppercase tracking-wider">Item</th>
                   <th className="text-left text-slate-400 text-xs font-medium px-4 py-3 uppercase tracking-wider">Price</th>
-                  <th className="text-center text-slate-400 text-xs font-medium px-4 py-3 uppercase tracking-wider">Units Sold</th>
+                  <th className="text-center text-slate-400 text-xs font-medium px-4 py-3 uppercase tracking-wider">Units Sold Today</th>
                   <th className="text-right text-slate-400 text-xs font-medium px-6 py-3 uppercase tracking-wider">Revenue</th>
                 </tr>
               </thead>
@@ -193,7 +222,7 @@ export default function Dashboard() {
               </tbody>
               <tfoot>
                 <tr className="bg-navy-900">
-                  <td colSpan={3} className="px-6 py-4 text-slate-300 font-semibold">Total Shop Revenue</td>
+                  <td colSpan={3} className="px-6 py-4 text-slate-300 font-semibold">Today's Total Shop Revenue</td>
                   <td className="px-6 py-4 text-right text-electric-green font-bold text-lg">${totalItemRevenue.toFixed(2)}</td>
                 </tr>
               </tfoot>
