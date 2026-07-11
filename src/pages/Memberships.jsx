@@ -2,7 +2,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
-import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Eye, RefreshCw, Calendar } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Eye, RefreshCw, Calendar, Printer } from 'lucide-react'
+import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,28 +25,37 @@ export function computeEndDate(member) {
   return start.toISOString().split('T')[0]
 }
 
-// Local date key (YYYY-MM-DD)
-const localDateKey = (d) => {
-  const dt = d instanceof Date ? d : new Date(d)
-  const y = dt.getFullYear()
-  const m = String(dt.getMonth() + 1).padStart(2, '0')
-  const day = String(dt.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+export function memberDisplayName(m) {
+  const name = `${m.first_name || ''} ${m.last_name || ''}`.trim()
+  return name || 'Walk-in Customer'
 }
-const todayKey = () => localDateKey(new Date())
+function toYearMonth(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+// Returns a display label like "June 2026"
+function formatYearMonth(ym) {
+  const [y, m] = ym.split('-')
+  return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+// Returns first and last ISO date strings of a given 'YYYY-MM'
+function monthBounds(ym) {
+  const [y, m] = ym.split('-').map(Number)
+  const first = new Date(y, m - 1, 1)
+  const last  = new Date(y, m, 0)
+  return {
+    from: first.toISOString().split('T')[0],
+    to:   last.toISOString().split('T')[0],
+  }
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 10
 const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'custom']
-const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all' }
-const FIXED_PRICES = { daily: 5, weekly: 25, biweekly: 40, triweekly: 55, monthly: 50 }
-const DATE_FILTER_OPTIONS = [
-  { id: 'day', label: 'Today' },
-  { id: 'week', label: 'This Week' },
-  { id: 'month', label: 'This Month' },
-  { id: 'custom', label: 'Custom' },
-]
+const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all', membershipStatus: 'all' }
+const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40 }
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +89,19 @@ function SubscriptionBadge({ type }) {
   )
 }
 
+function MembershipStatusBadge({ status }) {
+  const isNew = status !== 'renewed'
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border ${
+      isNew
+        ? 'bg-electric-blue/20 text-electric-blue border-electric-blue/30'
+        : 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+    }`}>
+      {isNew ? 'New' : 'Renewed'}
+    </span>
+  )
+}
+
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
 function DetailModal({ member, onClose, onRenew }) {
@@ -91,8 +114,8 @@ function DetailModal({ member, onClose, onRenew }) {
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
         <div className="flex justify-between items-start mb-6">
           <div>
-            <h3 className="text-xl font-bold text-white">{member.first_name} {member.last_name}</h3>
-            <p className="text-slate-400 text-sm mt-0.5">{member.phone_number}</p>
+            <h3 className="text-xl font-bold text-white">{memberDisplayName(member)}</h3>
+            <p className="text-slate-400 text-sm mt-0.5">{member.phone_number || 'No phone on file'}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
@@ -103,6 +126,17 @@ function DetailModal({ member, onClose, onRenew }) {
           </span>
         </div>
         <div className="space-y-3 mb-5">
+          <div className="flex justify-between items-center py-2 border-b border-navy-700">
+            <span className="text-slate-400 text-sm">Membership</span>
+            <div className="flex items-center gap-2">
+              <MembershipStatusBadge status={member.membership_status} />
+              {(member.renewal_count || 0) > 0 && (
+                <span className="flex items-center gap-1 text-slate-400 text-xs">
+                  <RefreshCw size={12} /> Renewed {member.renewal_count}x
+                </span>
+              )}
+            </div>
+          </div>
           <div className="flex justify-between items-center py-2 border-b border-navy-700">
             <span className="text-slate-400 text-sm">Plan</span>
             <SubscriptionBadge type={member.subscription_type} />
@@ -144,6 +178,9 @@ function DetailModal({ member, onClose, onRenew }) {
         </div>
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
+          <button onClick={() => printReceiptViaRawBT(member)} className="flex items-center gap-2 px-4 py-2 border border-navy-700 text-slate-300 hover:text-white hover:border-slate-500 rounded-lg font-medium text-sm transition-colors">
+            <Printer size={15} /> Print Receipt
+          </button>
           {expired && (
             <button onClick={() => { onClose(); onRenew(member) }} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 text-sm">
               <RefreshCw size={15} /> Renew Membership
@@ -166,16 +203,28 @@ function RenewModal({ member, onClose, onSuccess }) {
   const [discountValue, setDiscountValue] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
+  const [fullName, setFullName]       = useState(`${member.first_name || ''} ${member.last_name || ''}`.trim())
+  const [phoneNumber, setPhoneNumber] = useState(member.phone_number || '')
 
+  const DAILY_UPGRADE_DISCOUNT = 7
   const isCustom   = subscriptionType === 'custom'
-  const basePrice  = isCustom ? parseFloat(customPrice) || 0 : FIXED_PRICES[subscriptionType] || 0
+  const wasDaily   = member.subscription_type === 'daily'
+  // Daily member switching to a non-daily plan: needs real contact info, gets $7 off
+  const switchingFromDaily = wasDaily && subscriptionType !== 'daily'
+
+  const rawBasePrice = isCustom ? parseFloat(customPrice) || 0 : FIXED_PRICES[subscriptionType] || 0
+  const basePrice  = switchingFromDaily ? Math.max(0, rawBasePrice - DAILY_UPGRADE_DISCOUNT) : rawBasePrice
   const discVal    = parseFloat(discountValue) || 0
   const amountPaid = discountType === 'percentage'
     ? Math.max(0, basePrice - basePrice * (discVal / 100))
     : discountType === 'fixed' ? Math.max(0, basePrice - discVal) : basePrice
 
+  const infoMissing = switchingFromDaily && (!fullName.trim() || !phoneNumber.trim())
+
   const handleRenew = async () => {
-    setError(null); setLoading(true)
+    setError(null)
+    if (infoMissing) { setError('Please enter a name and phone number for this membership.'); return }
+    setLoading(true)
     let endDateStr
     if (isCustom) {
       endDateStr = customEndDate
@@ -185,11 +234,19 @@ function RenewModal({ member, onClose, onSuccess }) {
       start.setDate(start.getDate() + durationMap[subscriptionType])
       endDateStr = start.toISOString().split('T')[0]
     }
-    const { error: err } = await supabase.from('members').update({
+    const updatePayload = {
       subscription_type: subscriptionType, base_price: basePrice,
       discount_type: discountType, discount_value: discVal,
       amount_paid: amountPaid, start_date: startDate, end_date: endDateStr,
-    }).eq('id', member.id)
+      renewal_count: (member.renewal_count || 0) + 1,
+    }
+    if (switchingFromDaily) {
+      const parts = fullName.trim().split(/\s+/).filter(Boolean)
+      updatePayload.first_name = parts[0] || ''
+      updatePayload.last_name = parts.slice(1).join(' ')
+      updatePayload.phone_number = phoneNumber.trim()
+    }
+    const { error: err } = await supabase.from('members').update(updatePayload).eq('id', member.id)
     setLoading(false)
     if (err) { setError(err.message); return }
     onSuccess()
@@ -201,12 +258,29 @@ function RenewModal({ member, onClose, onSuccess }) {
         <div className="flex justify-between items-center mb-5">
           <div>
             <h3 className="text-xl font-bold text-white">Renew Membership</h3>
-            <p className="text-slate-400 text-sm mt-0.5">{member.first_name} {member.last_name}</p>
+            <p className="text-slate-400 text-sm mt-0.5">{memberDisplayName(member)}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
         {error && <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>}
+        {switchingFromDaily && (
+          <div className="mb-4 p-3 bg-electric-blue/10 border border-electric-blue/30 rounded-lg text-electric-blue text-sm">
+            Switching from Daily — $7 discount applied automatically, and this membership now needs a name and phone number.
+          </div>
+        )}
         <div className="space-y-4">
+          {switchingFromDaily && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Full Name</label>
+                <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} required placeholder="e.g. John Smith" className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600" />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Phone Number</label>
+                <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-slate-400 mb-1">Subscription Type</label>
             <select value={subscriptionType} onChange={e => setSubscriptionType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
@@ -255,11 +329,44 @@ function RenewModal({ member, onClose, onSuccess }) {
         </div>
         <div className="flex justify-end gap-3 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Cancel</button>
-          <button onClick={handleRenew} disabled={loading || (isCustom && !customEndDate)} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm">
+          <button onClick={handleRenew} disabled={loading || (isCustom && !customEndDate) || infoMissing} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm">
             <RefreshCw size={15} /> {loading ? 'Renewing…' : 'Confirm Renewal'}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Month Navigator ──────────────────────────────────────────────────────────
+
+function MonthNavigator({ value, onChange }) {
+  const now = toYearMonth(new Date())
+
+  const prev = () => {
+    const [y, m] = value.split('-').map(Number)
+    const d = new Date(y, m - 2, 1)
+    onChange(toYearMonth(d))
+  }
+  const next = () => {
+    const [y, m] = value.split('-').map(Number)
+    const d = new Date(y, m, 1)
+    onChange(toYearMonth(d))
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={prev} className="p-1.5 rounded-lg bg-navy-900 border border-navy-700 hover:border-slate-500 text-slate-400 hover:text-white transition-colors">
+        <ChevronLeft size={16} />
+      </button>
+      <div className="flex items-center gap-2 px-4 py-1.5 bg-navy-900 border border-navy-700 rounded-lg min-w-[160px] justify-center">
+        <Calendar size={15} className="text-electric-blue" />
+        <span className="text-white text-sm font-medium">{formatYearMonth(value)}</span>
+        {value === now && <span className="text-xs text-electric-blue font-semibold">Current</span>}
+      </div>
+      <button onClick={next} disabled={value >= now} className="p-1.5 rounded-lg bg-navy-900 border border-navy-700 hover:border-slate-500 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+        <ChevronRight size={16} />
+      </button>
     </div>
   )
 }
@@ -271,43 +378,23 @@ export default function Memberships() {
   const [loading, setLoading]             = useState(true)
   const [search, setSearch]               = useState('')
   const [filters, setFilters]             = useState(DEFAULT_FILTERS)
+  const [selectedMonth, setSelectedMonth] = useState(toYearMonth(new Date()))
   const [page, setPage]                   = useState(1)
   const [isModalOpen, setIsModalOpen]     = useState(false)
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
 
-  // Date filtration state
-  const [dateFilter, setDateFilter] = useState('month') // Default to 'This Month'
-  const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
-
   const fetchMembers = useCallback(async () => {
     setLoading(true)
-    
-    const today = new Date()
-    let startStr = todayKey()
-    let endStr = todayKey()
-
-    if (dateFilter === 'week') {
-      const start = new Date(today)
-      start.setDate(today.getDate() - 6) // Rolling 7 days
-      startStr = localDateKey(start)
-      endStr = todayKey()
-    } else if (dateFilter === 'month') {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1)
-      startStr = localDateKey(start)
-      endStr = todayKey()
-    } else if (dateFilter === 'custom') {
-      startStr = customRange.start || todayKey()
-      endStr = customRange.end || todayKey()
-    }
+    const { from, to } = monthBounds(selectedMonth)
 
     let query = supabase
       .from('members')
       .select('*')
-      .gte('start_date', `${startStr}T00:00:00.000Z`)
-      .lte('start_date', `${endStr}T23:59:59.999Z`)
-      .order('start_date', { ascending: false, nullsFirst: false })
+      .gte('created_at', `${from}T00:00:00.000Z`)
+      .lte('created_at', `${to}T23:59:59.999Z`)
+      .order('created_at', { ascending: false })
 
     if (filters.subscriptionType !== 'all') {
       query = query.eq('subscription_type', filters.subscriptionType)
@@ -316,9 +403,15 @@ export default function Memberships() {
     const { data, error } = await query
     if (!error) setMembers(data || [])
     setLoading(false)
-  }, [filters, dateFilter, customRange])
+  }, [filters, selectedMonth])
 
   useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
+
+  // Reset to current month when component mounts (auto monthly reset)
+  useEffect(() => {
+    const now = toYearMonth(new Date())
+    setSelectedMonth(now)
+  }, [])
 
   const enrichedMembers = members.map(m => ({
     ...m,
@@ -329,11 +422,12 @@ export default function Memberships() {
   const filteredMembers = enrichedMembers.filter(m => {
     const q = search.toLowerCase()
     if (q) {
-      const fullName = `${m.first_name} ${m.last_name}`.toLowerCase()
-      if (!fullName.includes(q) && !m.phone_number.includes(q)) return false
+      const fullName = memberDisplayName(m).toLowerCase()
+      if (!fullName.includes(q) && !(m.phone_number || '').includes(q)) return false
     }
     if (filters.statusFilter === 'active'  &&  m._expired) return false
     if (filters.statusFilter === 'expired' && !m._expired) return false
+    if (filters.membershipStatus !== 'all' && (m.membership_status ?? 'new') !== filters.membershipStatus) return false
     return true
   })
 
@@ -349,7 +443,7 @@ export default function Memberships() {
     setPage(1)
   }
 
-  const hasActiveFilters = search !== '' || filters.subscriptionType !== 'all' || filters.statusFilter !== 'all'
+  const hasActiveFilters = search !== '' || filters.subscriptionType !== 'all' || filters.statusFilter !== 'all' || filters.membershipStatus !== 'all'
 
   const handleEdit   = (member) => { setCurrentMember(member); setIsModalOpen(true) }
   const handleDelete = async (id) => {
@@ -359,10 +453,9 @@ export default function Memberships() {
     }
   }
 
-  const activeCount  = filteredMembers.filter(m => !m._expired).length
-  const expiredCount = filteredMembers.filter(m =>  m._expired).length
-
-  const dateInputClass = "bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue transition-colors [color-scheme:dark]"
+  // Monthly totals summary
+  const activeCount     = filteredMembers.filter(m => !m._expired).length
+  const expiredCount    = filteredMembers.filter(m =>  m._expired).length
 
   return (
     <div>
@@ -370,58 +463,23 @@ export default function Memberships() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-white">Memberships</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Filter by membership start dates</p>
+          <p className="text-slate-400 text-sm mt-0.5">Showing records created in {formatYearMonth(selectedMonth)}</p>
         </div>
-        <button
-          onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
-          className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
-        >
-          <Plus size={20} /> Add Member
-        </button>
+        <div className="flex items-center gap-3">
+          <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
+          <button
+            onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
+            className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+          >
+            <Plus size={20} /> Add Member
+          </button>
+        </div>
       </div>
 
-      {/* ── Date Filter Bar ── */}
-      <div className="bg-navy-800 p-4 rounded-xl border border-navy-700 flex flex-wrap items-center gap-3 mb-6">
-        <div className="flex items-center gap-2">
-          <Calendar size={18} className="text-slate-400" />
-          <span className="text-slate-300 text-sm font-medium">Start Date:</span>
-        </div>
-        <div className="flex gap-1 bg-navy-900 rounded-lg p-1">
-          {DATE_FILTER_OPTIONS.map(opt => (
-            <button
-              key={opt.id}
-              onClick={() => setDateFilter(opt.id)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                dateFilter === opt.id ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        {dateFilter === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={customRange.start}
-              onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))}
-              className={dateInputClass}
-            />
-            <span className="text-slate-500">→</span>
-            <input
-              type="date"
-              value={customRange.end}
-              onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))}
-              className={dateInputClass}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* ── Summary cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      {/* ── Monthly summary cards ── */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members in Range</p>
+          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members This Month</p>
           <p className="text-2xl font-bold text-white">{loading ? '—' : filteredMembers.length}</p>
         </div>
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
@@ -432,6 +490,7 @@ export default function Memberships() {
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Expired</p>
           <p className="text-2xl font-bold text-red-400">{loading ? '—' : expiredCount}</p>
         </div>
+       
       </div>
 
       {/* ── Filters ── */}
@@ -454,6 +513,19 @@ export default function Memberships() {
                   filters.statusFilter === s
                     ? s === 'expired' ? 'bg-red-500/20 text-red-400 border border-red-500/40'
                       : s === 'active' ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                      : 'bg-electric-blue text-white'
+                    : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
+                }`}
+              >{s}</button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            {['all', 'new', 'renewed'].map(s => (
+              <button key={s} onClick={() => handleFilterChange('membershipStatus', s)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
+                  filters.membershipStatus === s
+                    ? s === 'renewed' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/40'
+                      : s === 'new' ? 'bg-electric-blue/20 text-electric-blue border border-electric-blue/40'
                       : 'bg-electric-blue text-white'
                     : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
                 }`}
@@ -506,18 +578,18 @@ export default function Memberships() {
             ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={9} className="p-8 text-center">
-                  <p className="text-slate-500">No memberships found in this date range.</p>
-                  <p className="text-slate-600 text-sm mt-1">Try adjusting the filters above.</p>
+                  <p className="text-slate-500">No memberships found for {formatYearMonth(selectedMonth)}.</p>
+                  <p className="text-slate-600 text-sm mt-1">Try navigating to a different month.</p>
                 </td>
               </tr>
             ) : (
               paginated.map(m => (
                 <tr key={m.id} className={`border-b border-navy-700 transition-colors ${m._expired ? 'bg-red-950/20 hover:bg-red-950/30' : 'hover:bg-navy-900/50'}`}>
                   <td className="p-4">
-                    <p className="text-white font-medium">{m.first_name} {m.last_name}</p>
+                    <p className="text-white font-medium">{memberDisplayName(m)}</p>
                     <p className="text-slate-500 text-xs mt-0.5">{new Date(m.created_at).toLocaleDateString()}</p>
                   </td>
-                  <td className="p-4 hidden md:table-cell text-slate-400 text-sm">{m.phone_number}</td>
+                  <td className="p-4 hidden md:table-cell text-slate-400 text-sm">{m.phone_number || '—'}</td>
                   <td className="p-4"><SubscriptionBadge type={m.subscription_type} /></td>
                   <td className="p-4 hidden sm:table-cell text-slate-400 text-sm">
                     {m.start_date ? new Date(m.start_date).toLocaleDateString() : '—'}
@@ -525,7 +597,17 @@ export default function Memberships() {
                   <td className="p-4 hidden lg:table-cell text-slate-400 text-sm">
                     {m._computedEndDate ? new Date(m._computedEndDate).toLocaleDateString() : '—'}
                   </td>
-                  <td className="p-4"><StatusBadge expired={m._expired} /></td>
+                  <td className="p-4">
+                    <div className="flex flex-col gap-1 items-start">
+                      <StatusBadge expired={m._expired} />
+                      <div className="flex items-center gap-1">
+                        <MembershipStatusBadge status={m.membership_status} />
+                        {(m.renewal_count || 0) > 0 && (
+                          <span className="text-slate-500 text-xs">×{m.renewal_count}</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
                   <td className="p-4 text-electric-green font-semibold">${m.amount_paid}</td>
                   <td className="p-4 hidden xl:table-cell text-slate-400 text-sm max-w-[180px]">
                     {m.description

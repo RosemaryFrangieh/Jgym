@@ -40,31 +40,34 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-navy-900">
       {/* Sidebar */}
-      <aside className="w-64 bg-navy-800 p-4 flex flex-col gap-2 border-r border-navy-700">
-        <div className="flex items-center gap-2 px-4 py-4 mb-4 text-electric-green">
+      <aside className="w-64 h-screen sticky top-0 bg-navy-800 p-4 flex flex-col gap-2 border-r border-navy-700">
+        <div className="flex items-center gap-2 px-4 py-4 mb-4 text-electric-green shrink-0">
           <Dumbbell size={28} />
           <h1 className="text-xl font-bold text-white">J-gym</h1>
         </div>
 
-        {/* Dynamic nav based on permissions */}
-        {visiblePages.map(page => {
-          const Icon = PAGE_ICONS[page.path] || LayoutDashboard
-          return (
-            <SidebarLink key={page.path} to={page.path} icon={Icon}>
-              {page.label}
+        {/* Scrollable nav area — grows/shrinks but never pushes Sign Out off screen */}
+        <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+          {/* Dynamic nav based on permissions */}
+          {visiblePages.map(page => {
+            const Icon = PAGE_ICONS[page.path] || LayoutDashboard
+            return (
+              <SidebarLink key={page.path} to={page.path} icon={Icon}>
+                {page.label}
+              </SidebarLink>
+            )
+          })}
+
+          {/* Accounts link — admin only */}
+          {user?.role === 'admin' && (
+            <SidebarLink to="/accounts" icon={UserCog}>
+              Accounts
             </SidebarLink>
-          )
-        })}
+          )}
+        </nav>
 
-        {/* Accounts link — admin only */}
-        {user?.role === 'admin' && (
-          <SidebarLink to="/accounts" icon={UserCog}>
-            Accounts
-          </SidebarLink>
-        )}
-
-        {/* Spacer + Logout at bottom */}
-        <div className="mt-auto pt-4 border-t border-navy-700">
+        {/* Sign Out — always visible, no scrolling needed */}
+        <div className="pt-4 border-t border-navy-700 shrink-0">
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-400 hover:bg-navy-700 hover:text-red-400 transition-colors"

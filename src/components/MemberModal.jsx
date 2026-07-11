@@ -13,6 +13,7 @@ const FIXED_PRICES = {
 }
 
 export default function MemberModal({ member, onClose }) {
+  const [fullName, setFullName] = useState('')
   const [formData, setFormData] = useState({
     first_name: '', last_name: '', phone_number: '', description: '',
     subscription_type: 'monthly', base_price: 40, discount_type: 'none', discount_value: 0,
@@ -24,9 +25,11 @@ export default function MemberModal({ member, onClose }) {
   const [loading, setLoading] = useState(false)
   const [savedMember, setSavedMember] = useState(null) // set after a successful save, shows the receipt screen
   const isCustom = formData.subscription_type === 'custom'
+  const isDaily  = formData.subscription_type === 'daily'
 
   useEffect(() => {
     if (member) {
+      setFullName(`${member.first_name || ''} ${member.last_name || ''}`.trim())
       setFormData({
         ...member,
         start_date: member.start_date.split('T')[0],
@@ -50,6 +53,15 @@ export default function MemberModal({ member, onClose }) {
       finalAmount = base - discVal
     }
     setAmountPaid(finalAmount < 0 ? 0 : finalAmount)
+  }
+
+  const handleFullNameChange = (e) => {
+    const value = e.target.value
+    setFullName(value)
+    const parts = value.trim().split(/\s+/).filter(Boolean)
+    const first_name = parts[0] || ''
+    const last_name = parts.slice(1).join(' ')
+    setFormData(f => ({ ...f, first_name, last_name }))
   }
 
   const handleChange = (e) => {
@@ -128,7 +140,7 @@ export default function MemberModal({ member, onClose }) {
             onClick={() => printReceiptViaRawBT(savedMember)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 mb-3"
           >
-            <Printer size={20} /> Print Receipt
+            <Printer size={20} /> Print Receipt (Bluetooth)
           </button>
           <p className="text-xs text-slate-500 text-center mb-4">
             Sends the receipt to RawBT, which relays it to your paired Bluetooth printer.
@@ -160,20 +172,26 @@ export default function MemberModal({ member, onClose }) {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">First Name</label>
-              <input type="text" name="first_name" value={formData.first_name} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Last Name</label>
-              <input type="text" name="last_name" value={formData.last_name} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
-            </div>
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              Full Name {isDaily && <span className="text-slate-600">(optional for daily)</span>}
+            </label>
+            <input
+              type="text"
+              name="full_name"
+              value={fullName}
+              onChange={handleFullNameChange}
+              required={!isDaily}
+              placeholder="e.g. John Smith"
+              className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+            />
           </div>
 
           <div>
-              <label className="block text-sm text-slate-400 mb-1">Phone Number</label>
-              <input type="text" name="phone_number" value={formData.phone_number} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+              <label className="block text-sm text-slate-400 mb-1">
+                Phone Number {isDaily && <span className="text-slate-600">(optional for daily)</span>}
+              </label>
+              <input type="text" name="phone_number" value={formData.phone_number} onChange={handleChange} required={!isDaily} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
             </div>
 
           <div>

@@ -1,5 +1,5 @@
 export const GYM_NAME = 'J-GYM'
-export const INSTAGRAM_URL = 'https://instagram.com/your_handle' // <-- set your handle here
+export const INSTAGRAM_URL = 'https://www.instagram.com/j_gym_ehden?igsh=ZmkxbG84MjVnMXI0' 
 
 const LINE_WIDTH = 32
 
@@ -88,7 +88,7 @@ export function buildReceiptText(member) {
   r += 'Membership Receipt\n'
   r += divider()
   r += ALIGN_LEFT
-  r += row('Member: ', `${member.first_name} ${member.last_name}`)
+  r += row('Member: ', `${member.first_name || ''} ${member.last_name || ''}`.trim() || 'Walk-in Customer')
   r += row('Phone: ', member.phone_number || '-')
   r += row('Plan: ', SUBSCRIPTION_LABELS[member.subscription_type] || member.subscription_type)
   r += row('Start: ', formatDate(member.start_date))
@@ -108,8 +108,8 @@ export function buildReceiptText(member) {
   r += 'Thank you!\n'
 
   // --- Instagram QR code ---
-  r += '\n/keep up with us on instagram\n'
-  r += buildQRCode('https://www.instagram.com/j_gym_ehden?igsh=ZmkxbG84MjVnMXI0')
+  r += '\nFollow us on Instagram\n'
+  r += buildQRCode(INSTAGRAM_URL)
   r += '\n'
 
   r += FEED_CUT

@@ -14,6 +14,8 @@ const ITEM_COLORS = [
   'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
 ]
 
+const UNIT_LABEL = { piece: 'units', kg: 'kg', liter: 'L', session: 'sessions', month: 'months' }
+
 // Local date key (YYYY-MM-DD) in user's timezone
 const localDateKey = (d) => {
   const dt = d instanceof Date ? d : new Date(d)
@@ -285,7 +287,7 @@ export default function Financials() {
       </div>
 
       {/* Top KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-5">
         <div className="bg-gradient-to-br from-electric-blue to-blue-700 p-6 rounded-xl shadow-lg flex items-center justify-between col-span-1 sm:col-span-2 xl:col-span-1">
           <div>
             <p className="text-blue-100 text-sm">Grand Total Revenue</p>
@@ -306,7 +308,14 @@ export default function Financials() {
           <div>
             <p className="text-slate-400 text-sm">Shop Revenue</p>
             <h3 className="text-2xl font-bold text-white">${totalItemRevenue.toFixed(2)}</h3>
-            <p className="text-slate-500 text-xs mt-0.5">{totalItemsSold} item{totalItemsSold !== 1 ? 's' : ''} sold</p>
+          </div>
+        </div>
+        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+          <div className="p-3 bg-pink-500/10 rounded-lg text-pink-400"><Package size={28} /></div>
+          <div>
+            <p className="text-slate-400 text-sm">Items Sold</p>
+            <h3 className="text-2xl font-bold text-white">{totalItemsSold}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">in selected range</p>
           </div>
         </div>
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
@@ -317,6 +326,42 @@ export default function Financials() {
           </div>
         </div>
       </div>
+
+      {/* Items Sold — per-item breakdown */}
+      {items.length > 0 && (
+        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
+          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <Package size={20} className="text-pink-400" /> Items Sold — Breakdown
+            <span className="ml-1 text-slate-500 text-sm font-normal">({totalItemsSold} total in range)</span>
+          </h3>
+          {totalItemsSold === 0 ? (
+            <p className="text-slate-500 text-sm py-4">No items sold in this range.</p>
+          ) : (
+            <div className="space-y-3">
+              {items
+                .map((item, idx) => ({ item, idx, qty: getSales(item.id) }))
+                .sort((a, b) => b.qty - a.qty)
+                .map(({ item, idx, qty }) => {
+                  const colorClass = ITEM_COLORS[idx % ITEM_COLORS.length]
+                  const maxQty = Math.max(...items.map(i => getSales(i.id)), 1)
+                  return (
+                    <div key={item.id} className="flex items-center gap-3">
+                      <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${colorClass}`}>
+                        {item.name}
+                      </span>
+                      <div className="flex-1">
+                        <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-electric-blue rounded-full" style={{ width: `${(qty / maxQty) * 100}%` }} />
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-white font-semibold text-sm w-16 text-right">{qty} {UNIT_LABEL[item.unit] || 'units'}</span>
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -396,7 +441,7 @@ export default function Financials() {
             {recent.map(m => (
               <div key={m.id} className="flex justify-between items-center border-b border-navy-700 pb-3">
                 <div>
-                  <p className="text-white font-medium">{m.first_name} {m.last_name}</p>
+                  <p className="text-white font-medium">{`${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in Customer'}</p>
                   <p className="text-slate-400 text-sm capitalize">{m.subscription_type} subscription</p>
                 </div>
                 <span className="text-electric-green font-semibold">+${m.amount_paid}</span>
