@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar, Dumbbell, Activity } from 'lucide-react'
+import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar, Dumbbell, Activity, UserCheck } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
 const COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
@@ -14,7 +14,6 @@ const ITEM_COLORS = [
   'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
 ]
 
-// Local date key (YYYY-MM-DD) in user's timezone
 const localDateKey = (d) => {
   const dt = d instanceof Date ? d : new Date(d)
   const y = dt.getFullYear()
@@ -24,7 +23,6 @@ const localDateKey = (d) => {
 }
 const todayKey = () => localDateKey(new Date())
 
-// Migrate old { itemId: count } format to new { 'YYYY-MM-DD': { itemId: count } }
 function migrateItemSales(raw) {
   if (!raw) return {}
   try {
@@ -38,6 +36,16 @@ function migrateItemSales(raw) {
     return {}
   }
 }
+
+const FILTER_OPTIONS = [
+  { id: 'day', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'week', label: 'This Week' },
+  { id: 'month', label: 'This Month' },
+  { id: 'custom', label: 'Custom' },
+]
+
+const dateInputClass = "bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue transition-colors [color-scheme:dark]"
 
 function ItemModal({ item, onClose, onSave }) {
   const [form, setForm] = useState(item || { name: '', price: '', unit: 'piece', stock: '' })
@@ -120,13 +128,137 @@ function ItemModal({ item, onClose, onSave }) {
   )
 }
 
-const FILTER_OPTIONS = [
-  { id: 'day', label: 'Today' },
-  { id: 'yesterday', label: 'Yesterday' },
-  { id: 'week', label: 'This Week' },
-  { id: 'month', label: 'This Month' },
-  { id: 'custom', label: 'Custom' },
-]
+function UpgradedMembersModal({ onClose }) {
+  const [filterType, setFilterType] = useState('day')
+  const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const getRange = () => {
+    const today = new Date()
+    const todayStr = todayKey()
+    if (filterType === 'day') return { start: todayStr, end: todayStr }
+    if (filterType === 'yesterday') {
+      const y = new Date(today); y.setDate(today.getDate() - 1)
+      return { start: localDateKey(y), end: localDateKey(y) }
+    }
+    if (filterType === 'week') {
+      const start = new Date(today); start.setDate(today.getDate() - 6)
+      return { start: localDateKey(start), end: todayStr }
+    }
+    if (filterType === 'month') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      return { start: localDateKey(start), end: todayStr }
+    }
+    return { start: customRange.start || todayStr, end: customRange.end || todayStr }
+  }
+
+  const range = getRange()
+
+  useEffect(() => {
+    const fetchUpgraded = async () => {
+      setLoading(true)
+      const [membersRes, classesRes] = await Promise.all([
+        supabase.from('members').select('*').eq('was_daily', true),
+        supabase.from('class_members').select('*').eq('was_daily', true)
+      ])
+      
+      const membersData = (membersRes.data || []).map(m => ({
+        ...m, category: 'Gym', name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in', sub_type: m.subscription_type
+      }))
+      const classesData = (classesRes.data || []).map(c => ({
+        ...c, category: 'Class', name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in', sub_type: `${c.class_type} (${c.subscription_type})`
+      }))
+      
+      const allRecords = [...membersData, ...classesData]
+        .filter(r => {
+          if (!r.start_date) return false
+          const d = localDateKey(new Date(r.start_date))
+          return d >= range.start && d <= range.end
+        })
+        .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
+        
+      setRecords(allRecords)
+      setLoading(false)
+    }
+    fetchUpgraded()
+  }, [filterType, customRange.start, customRange.end])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-navy-800 border border-navy-700 rounded-2xl w-full max-w-5xl mx-4 shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-navy-700">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <UserCheck size={20} className="text-purple-400" /> Daily Upgraded Members
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={20} /></button>
+        </div>
+        
+        <div className="px-6 py-4 border-b border-navy-700 flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 bg-navy-900 rounded-lg p-1">
+            {FILTER_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setFilterType(opt.id)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  filterType === opt.id ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {filterType === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={customRange.start} onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))} className={dateInputClass} />
+              <span className="text-slate-500">→</span>
+              <input type="date" value={customRange.end} onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))} className={dateInputClass} />
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-auto">
+          <table className="w-full text-left">
+            <thead className="bg-navy-900 border-b border-navy-700 text-slate-400 text-sm sticky top-0">
+              <tr>
+                <th className="p-4">Name</th>
+                <th className="p-4">Category</th>
+                <th className="p-4">Phone</th>
+                <th className="p-4">New Plan</th>
+                <th className="p-4">Renewal Date</th>
+                <th className="p-4">Amount Paid</th>
+                <th className="p-4">Renewals</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={7} className="p-8 text-center text-slate-500">Loading...</td></tr>
+              ) : records.length === 0 ? (
+                <tr><td colSpan={7} className="p-8 text-center text-slate-500">No upgraded members in this range.</td></tr>
+              ) : (
+                records.map(r => (
+                  <tr key={`${r.category}-${r.id}`} className="border-b border-navy-700 hover:bg-navy-900/50">
+                    <td className="p-4 text-white font-medium">{r.name}</td>
+                    <td className="p-4">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium border ${r.category === 'Gym' ? 'bg-electric-blue/20 text-electric-blue border-electric-blue/30' : 'bg-pink-500/20 text-pink-400 border-pink-500/30'}`}>
+                        {r.category}
+                      </span>
+                    </td>
+                    <td className="p-4 text-slate-400 text-sm">{r.phone_number || '—'}</td>
+                    <td className="p-4 text-slate-300 capitalize text-sm">{r.sub_type}</td>
+                    <td className="p-4 text-slate-400 text-sm">{r.start_date ? new Date(r.start_date).toLocaleDateString() : '—'}</td>
+                    <td className="p-4 text-electric-green font-semibold">${r.amount_paid}</td>
+                    <td className="p-4 text-slate-400 text-sm">{r.renewal_count || 0}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function Financials() {
   const [stats, setStats] = useState({
@@ -136,6 +268,7 @@ export default function Financials() {
   const [recent, setRecent] = useState([])
   const [filterType, setFilterType] = useState('day')
   const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
+  const [showUpgradedModal, setShowUpgradedModal] = useState(false)
 
   const [items, setItems] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gym_shop_items') || '[]') } catch { return [] }
@@ -145,27 +278,22 @@ export default function Financials() {
   const [editingItem, setEditingItem] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  // Re-read sales from localStorage when page is focused (in case Dashboard changed it)
   useEffect(() => {
     const onFocus = () => setItemSales(migrateItemSales(localStorage.getItem('gym_item_sales')))
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  // Compute the active date range based on filter
   const getRange = () => {
     const today = new Date()
     const todayStr = todayKey()
     if (filterType === 'day') return { start: todayStr, end: todayStr }
     if (filterType === 'yesterday') {
-      const y = new Date(today)
-      y.setDate(today.getDate() - 1)
-      const yStr = localDateKey(y)
-      return { start: yStr, end: yStr }
+      const y = new Date(today); y.setDate(today.getDate() - 1)
+      return { start: localDateKey(y), end: localDateKey(y) }
     }
     if (filterType === 'week') {
-      const start = new Date(today)
-      start.setDate(today.getDate() - 6)
+      const start = new Date(today); start.setDate(today.getDate() - 6)
       return { start: localDateKey(start), end: todayStr }
     }
     if (filterType === 'month') {
@@ -184,7 +312,6 @@ export default function Financials() {
   }
 
   const fetchFinancials = async () => {
-    // Fetch Gym Members and Class Members in parallel
     const [membersRes, classesRes] = await Promise.all([
       supabase.from('members').select('*').order('created_at', { ascending: false }),
       supabase.from('class_members').select('*').order('created_at', { ascending: false })
@@ -193,11 +320,9 @@ export default function Financials() {
     const membersData = membersRes.data || []
     const classesData = classesRes.data || []
 
-    // Filter by selected date range
     const filteredMembers = membersData.filter(m => inRange(m.created_at))
     const filteredClasses = classesData.filter(c => inRange(c.created_at))
 
-    // Calculate Gym Stats
     const gymTotal = filteredMembers.reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
     const gymDaily = filteredMembers.filter(m => m.subscription_type === 'daily').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
     const gymWeekly = filteredMembers.filter(m => m.subscription_type === 'weekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
@@ -205,7 +330,6 @@ export default function Financials() {
     const gymTriweekly = filteredMembers.filter(m => m.subscription_type === 'triweekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
     const gymMonthly = filteredMembers.filter(m => m.subscription_type === 'monthly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
 
-    // Calculate Class Stats
     const classesTotal = filteredClasses.reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
     const classDaily = filteredClasses.filter(c => c.subscription_type === 'daily').reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
     const classMonthly = filteredClasses.filter(c => c.subscription_type === 'monthly').reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
@@ -215,23 +339,14 @@ export default function Financials() {
       classesTotal, classDaily, classMonthly 
     })
 
-    // Merge recent transactions
     const mappedMembers = filteredMembers.map(m => ({
-      id: `gym-${m.id}`,
-      type: 'Gym',
-      name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in',
-      sub_type: m.subscription_type,
-      amount: m.amount_paid,
-      created_at: m.created_at
+      id: `gym-${m.id}`, type: 'Gym', name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in',
+      sub_type: m.subscription_type, amount: m.amount_paid, created_at: m.created_at
     }))
 
     const mappedClasses = filteredClasses.map(c => ({
-      id: `cls-${c.id}`,
-      type: 'Class',
-      name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in',
-      sub_type: `${c.class_type} (${c.subscription_type})`,
-      amount: c.amount_paid,
-      created_at: c.created_at
+      id: `cls-${c.id}`, type: 'Class', name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in',
+      sub_type: `${c.class_type} (${c.subscription_type})`, amount: c.amount_paid, created_at: c.created_at
     }))
 
     const mergedRecent = [...mappedMembers, ...mappedClasses]
@@ -242,17 +357,11 @@ export default function Financials() {
   }
 
   useEffect(() => { fetchFinancials() }, [filterType, customRange.start, customRange.end])
+  useEffect(() => { localStorage.setItem('gym_shop_items', JSON.stringify(items)) }, [items])
 
-  useEffect(() => {
-    localStorage.setItem('gym_shop_items', JSON.stringify(items))
-  }, [items])
-
-  // Get sales for an item within the active range (aggregates all dates in range)
   const getSales = (id) => {
     return Object.entries(itemSales).reduce((sum, [dateKey, dayData]) => {
-      if (dateKey >= range.start && dateKey <= range.end) {
-        return sum + (dayData[id] ?? 0)
-      }
+      if (dateKey >= range.start && dateKey <= range.end) return sum + (dayData[id] ?? 0)
       return sum
     }, 0)
   }
@@ -270,13 +379,11 @@ export default function Financials() {
     } else {
       setItems(prev => [...prev, { id: Date.now(), ...data }])
     }
-    setShowItemModal(false)
-    setEditingItem(null)
+    setShowItemModal(false); setEditingItem(null)
   }
 
   const handleDeleteItem = (idx) => {
-    setItems(prev => prev.filter((_, i) => i !== idx))
-    setDeleteConfirm(null)
+    setItems(prev => prev.filter((_, i) => i !== idx)); setDeleteConfirm(null)
   }
 
   const pieData = [
@@ -287,19 +394,24 @@ export default function Financials() {
 
   const itemBarData = items.map(it => ({
     name: it.name.length > 12 ? it.name.slice(0, 11) + '…' : it.name,
-    revenue: parseFloat(getItemRevenue(it).toFixed(2)),
-    sales: getSales(it.id),
+    revenue: parseFloat(getItemRevenue(it).toFixed(2)), sales: getSales(it.id),
   }))
-
-  const dateInputClass = "bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue transition-colors [color-scheme:dark]"
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 className="text-2xl font-bold text-white">Financial Overview</h2>
-        <div className="text-slate-400 text-sm flex items-center gap-2">
-          <Calendar size={14} />
-          <span>Range: <span className="text-white font-medium">{range.start}</span> → <span className="text-white font-medium">{range.end}</span></span>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowUpgradedModal(true)} 
+            className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold text-sm hover:bg-purple-600 transition-colors"
+          >
+            <UserCheck size={16} /> Review Daily Upgraded
+          </button>
+          <div className="text-slate-400 text-sm flex items-center gap-2">
+            <Calendar size={14} />
+            <span>Range: <span className="text-white font-medium">{range.start}</span> → <span className="text-white font-medium">{range.end}</span></span>
+          </div>
         </div>
       </div>
 
@@ -324,19 +436,9 @@ export default function Financials() {
         </div>
         {filterType === 'custom' && (
           <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={customRange.start}
-              onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))}
-              className={dateInputClass}
-            />
+            <input type="date" value={customRange.start} onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))} className={dateInputClass} />
             <span className="text-slate-500">→</span>
-            <input
-              type="date"
-              value={customRange.end}
-              onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))}
-              className={dateInputClass}
-            />
+            <input type="date" value={customRange.end} onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))} className={dateInputClass} />
           </div>
         )}
       </div>
@@ -408,10 +510,7 @@ export default function Financials() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                 <XAxis dataKey="name" stroke="#94a3b8" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#94a3b8" tickFormatter={v => `$${v}`} />
-                <Tooltip
-                  formatter={(v, name) => name === 'revenue' ? `$${v.toFixed(2)}` : `${v} sold`}
-                  contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }}
-                />
+                <Tooltip formatter={(v, name) => name === 'revenue' ? `$${v.toFixed(2)}` : `${v} sold`} contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }} />
                 <Bar dataKey="revenue" fill="#a855f7" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -441,10 +540,7 @@ export default function Financials() {
                     <span className="text-white font-semibold">${row.value.toFixed(2)}</span>
                   </div>
                   <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${row.color} rounded-full`}
-                      style={{ width: row.total > 0 ? `${(row.value / row.total) * 100}%` : '0%' }}
-                    />
+                    <div className={`h-full ${row.color} rounded-full`} style={{ width: row.total > 0 ? `${(row.value / row.total) * 100}%` : '0%' }} />
                   </div>
                 </div>
               </div>
@@ -482,10 +578,7 @@ export default function Financials() {
               <p className="text-slate-500 text-sm">{items.length} item{items.length !== 1 ? 's' : ''} listed · {totalItemsSold} sold in range</p>
             </div>
           </div>
-          <button
-            onClick={() => { setEditingItem(null); setShowItemModal(true) }}
-            className="flex items-center gap-2 px-4 py-2.5 bg-electric-green text-navy-900 font-semibold rounded-lg text-sm hover:brightness-110 transition-all"
-          >
+          <button onClick={() => { setEditingItem(null); setShowItemModal(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-electric-green text-navy-900 font-semibold rounded-lg text-sm hover:brightness-110 transition-all">
             <Plus size={17} /> Add Item
           </button>
         </div>
@@ -509,20 +602,12 @@ export default function Financials() {
                       <Package size={12} /> {item.unit}
                     </span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => { setEditingItem(idx); setShowItemModal(true) }}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-electric-blue hover:bg-electric-blue/10 transition-colors"
-                      ><Pencil size={14} /></button>
-                      <button
-                        onClick={() => setDeleteConfirm(idx)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      ><Trash2 size={14} /></button>
+                      <button onClick={() => { setEditingItem(idx); setShowItemModal(true) }} className="p-1.5 rounded-lg text-slate-500 hover:text-electric-blue hover:bg-electric-blue/10 transition-colors"><Pencil size={14} /></button>
+                      <button onClick={() => setDeleteConfirm(idx)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /></button>
                     </div>
                   </div>
                   <h4 className="text-white font-semibold text-base mb-1 truncate">{item.name}</h4>
                   <p className="text-2xl font-bold text-electric-green">${parseFloat(item.price).toFixed(2)}</p>
-
-                  {/* Sold in range stats */}
                   <div className="mt-3 pt-3 border-t border-navy-700 grid grid-cols-2 gap-2">
                     <div>
                       <p className="text-slate-500 text-xs">Sold (range)</p>
@@ -533,13 +618,11 @@ export default function Financials() {
                       <p className="text-electric-green font-semibold text-sm">${revInRange.toFixed(2)}</p>
                     </div>
                   </div>
-
                   {item.stock !== null && item.stock !== undefined && (
                     <p className={`text-xs mt-2 font-medium ${item.stock === 0 ? 'text-red-400' : item.stock < 5 ? 'text-orange-400' : 'text-slate-500'}`}>
                       {item.stock === 0 ? '⚠ Out of stock' : `${item.stock} in stock`}
                     </p>
                   )}
-
                   {deleteConfirm === idx && (
                     <div className="mt-3 pt-3 border-t border-navy-700">
                       <p className="text-red-400 text-xs mb-2">Remove this item?</p>
@@ -563,6 +646,8 @@ export default function Financials() {
           onSave={handleSaveItem}
         />
       )}
+
+      {showUpgradedModal && <UpgradedMembersModal onClose={() => setShowUpgradedModal(false)} />}
     </div>
   )
 }
