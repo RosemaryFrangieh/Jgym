@@ -6,6 +6,7 @@ const AuthContext = createContext(null)
 export const ALL_PAGES = [
   { path: '/', label: 'Dashboard' },
   { path: '/memberships', label: 'Memberships' },
+  { path: '/classes', label: 'Classes' },
   { path: '/financials', label: 'Financials' },
 ]
 

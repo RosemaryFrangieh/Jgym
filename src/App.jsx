@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import Layout from './components/layout'
+import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Memberships from './pages/Memberships'
+import Classes from './pages/Classes' // <--- ADD THIS
 import Financials from './pages/Financials'
 import Login from './pages/Login'
 import AccessDenied from './pages/AccessDenied'
@@ -17,7 +18,6 @@ function PageGuard({ path, children }) {
 
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />
 
-  // Admin-only pages check
   if (path === '/accounts' && user.role !== 'admin') {
     return <Navigate to="/access-denied" replace />
   }
@@ -27,6 +27,13 @@ function PageGuard({ path, children }) {
   }
 
   return children
+}
+
+function AuthRedirect() {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (!user) return <Navigate to="/login" replace />
+  return <Navigate to="/" replace />
 }
 
 function AppRoutes() {
@@ -42,55 +49,20 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Public routes */}
-      <Route
-        path="/login"
-        element={user ? <Navigate to="/" replace /> : <Login />}
-      />
+      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/access-denied" element={<AccessDenied />} />
 
-      {/* Protected layout routes */}
-      <Route
-        path="/"
-        element={
-          user ? <Layout /> : <Navigate to="/login" replace />
-        }
-      >
-        <Route
-          index
-          element={
-            <PageGuard path="/">
-              <Dashboard />
-            </PageGuard>
-          }
-        />
-        <Route
-          path="memberships"
-          element={
-            <PageGuard path="/memberships">
-              <Memberships />
-            </PageGuard>
-          }
-        />
-        <Route
-          path="financials"
-          element={
-            <PageGuard path="/financials">
-              <Financials />
-            </PageGuard>
-          }
-        />
-        <Route
-          path="accounts"
-          element={
-            <PageGuard path="/accounts">
-              <Accounts />
-            </PageGuard>
-          }
-        />
+      <Route path="/" element={user ? <Layout /> : <Navigate to="/login" replace />}>
+        <Route index element={<PageGuard path="/"><Dashboard /></PageGuard>} />
+        <Route path="memberships" element={<PageGuard path="/memberships"><Memberships /></PageGuard>} />
+        
+        {/* --- ADD THIS ROUTE --- */}
+        <Route path="classes" element={<PageGuard path="/classes"><Classes /></PageGuard>} />
+        
+        <Route path="financials" element={<PageGuard path="/financials"><Financials /></PageGuard>} />
+        <Route path="accounts" element={<PageGuard path="/accounts"><Accounts /></PageGuard>} />
       </Route>
 
-      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, DollarSign, Dumbbell, LogOut, UserCog, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Users, DollarSign, Dumbbell, LogOut, UserCog, ShieldCheck, Activity } from 'lucide-react' // <-- Added Activity
 import { useAuth, ALL_PAGES } from '../context/AuthContext'
 
 const PAGE_ICONS = {
   '/': LayoutDashboard,
   '/memberships': Users,
+  '/classes': Activity, // <--- ADD THIS
   '/financials': DollarSign,
 }
 
@@ -30,7 +31,6 @@ export default function Layout() {
     navigate('/login', { replace: true })
   }
 
-  // Only show nav links the user can access
   const visiblePages = ALL_PAGES.filter(p => canAccess(p.path))
 
   const initials = user?.username
@@ -39,16 +39,13 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-navy-900">
-      {/* Sidebar */}
       <aside className="w-64 h-screen sticky top-0 bg-navy-800 p-4 flex flex-col gap-2 border-r border-navy-700">
         <div className="flex items-center gap-2 px-4 py-4 mb-4 text-electric-green shrink-0">
           <Dumbbell size={28} />
           <h1 className="text-xl font-bold text-white">J-gym</h1>
         </div>
 
-        {/* Scrollable nav area — grows/shrinks but never pushes Sign Out off screen */}
         <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
-          {/* Dynamic nav based on permissions */}
           {visiblePages.map(page => {
             const Icon = PAGE_ICONS[page.path] || LayoutDashboard
             return (
@@ -58,7 +55,6 @@ export default function Layout() {
             )
           })}
 
-          {/* Accounts link — admin only */}
           {user?.role === 'admin' && (
             <SidebarLink to="/accounts" icon={UserCog}>
               Accounts
@@ -66,7 +62,6 @@ export default function Layout() {
           )}
         </nav>
 
-        {/* Sign Out — always visible, no scrolling needed */}
         <div className="pt-4 border-t border-navy-700 shrink-0">
           <button
             onClick={handleLogout}
@@ -78,7 +73,6 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col">
         <header className="h-16 bg-navy-800 border-b border-navy-700 flex items-center justify-between px-8">
           <h2 className="text-lg font-semibold text-white">Gym Management</h2>

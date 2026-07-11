@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar } from 'lucide-react'
+import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar, Dumbbell, Activity } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
 const COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
@@ -13,8 +13,6 @@ const ITEM_COLORS = [
   'bg-pink-500/10 text-pink-400 border-pink-500/20',
   'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
 ]
-
-const UNIT_LABEL = { piece: 'units', kg: 'kg', liter: 'L', session: 'sessions', month: 'months' }
 
 // Local date key (YYYY-MM-DD) in user's timezone
 const localDateKey = (d) => {
@@ -124,13 +122,17 @@ function ItemModal({ item, onClose, onSave }) {
 
 const FILTER_OPTIONS = [
   { id: 'day', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'This Week' },
   { id: 'month', label: 'This Month' },
   { id: 'custom', label: 'Custom' },
 ]
 
 export default function Financials() {
-  const [stats, setStats] = useState({ total: 0, daily: 0, weekly: 0, monthly: 0 })
+  const [stats, setStats] = useState({
+    gymTotal: 0, gymDaily: 0, gymWeekly: 0, gymBiweekly: 0, gymTriweekly: 0, gymMonthly: 0,
+    classesTotal: 0, classDaily: 0, classMonthly: 0
+  })
   const [recent, setRecent] = useState([])
   const [filterType, setFilterType] = useState('day')
   const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
@@ -155,6 +157,12 @@ export default function Financials() {
     const today = new Date()
     const todayStr = todayKey()
     if (filterType === 'day') return { start: todayStr, end: todayStr }
+    if (filterType === 'yesterday') {
+      const y = new Date(today)
+      y.setDate(today.getDate() - 1)
+      const yStr = localDateKey(y)
+      return { start: yStr, end: yStr }
+    }
     if (filterType === 'week') {
       const start = new Date(today)
       start.setDate(today.getDate() - 6)
@@ -176,16 +184,61 @@ export default function Financials() {
   }
 
   const fetchFinancials = async () => {
-    const { data } = await supabase.from('members').select('*').order('created_at', { ascending: false })
-    if (data) {
-      const filtered = data.filter(m => inRange(m.created_at))
-      const total = filtered.reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
-      const daily = filtered.filter(m => m.subscription_type === 'daily').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
-      const weekly = filtered.filter(m => m.subscription_type === 'weekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
-      const monthly = filtered.filter(m => m.subscription_type === 'monthly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
-      setStats({ total, daily, weekly, monthly })
-      setRecent(filtered.slice(0, 8))
-    }
+    // Fetch Gym Members and Class Members in parallel
+    const [membersRes, classesRes] = await Promise.all([
+      supabase.from('members').select('*').order('created_at', { ascending: false }),
+      supabase.from('class_members').select('*').order('created_at', { ascending: false })
+    ])
+
+    const membersData = membersRes.data || []
+    const classesData = classesRes.data || []
+
+    // Filter by selected date range
+    const filteredMembers = membersData.filter(m => inRange(m.created_at))
+    const filteredClasses = classesData.filter(c => inRange(c.created_at))
+
+    // Calculate Gym Stats
+    const gymTotal = filteredMembers.reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+    const gymDaily = filteredMembers.filter(m => m.subscription_type === 'daily').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+    const gymWeekly = filteredMembers.filter(m => m.subscription_type === 'weekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+    const gymBiweekly = filteredMembers.filter(m => m.subscription_type === 'biweekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+    const gymTriweekly = filteredMembers.filter(m => m.subscription_type === 'triweekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+    const gymMonthly = filteredMembers.filter(m => m.subscription_type === 'monthly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
+
+    // Calculate Class Stats
+    const classesTotal = filteredClasses.reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
+    const classDaily = filteredClasses.filter(c => c.subscription_type === 'daily').reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
+    const classMonthly = filteredClasses.filter(c => c.subscription_type === 'monthly').reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
+
+    setStats({ 
+      gymTotal, gymDaily, gymWeekly, gymBiweekly, gymTriweekly, gymMonthly, 
+      classesTotal, classDaily, classMonthly 
+    })
+
+    // Merge recent transactions
+    const mappedMembers = filteredMembers.map(m => ({
+      id: `gym-${m.id}`,
+      type: 'Gym',
+      name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in',
+      sub_type: m.subscription_type,
+      amount: m.amount_paid,
+      created_at: m.created_at
+    }))
+
+    const mappedClasses = filteredClasses.map(c => ({
+      id: `cls-${c.id}`,
+      type: 'Class',
+      name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in',
+      sub_type: `${c.class_type} (${c.subscription_type})`,
+      amount: c.amount_paid,
+      created_at: c.created_at
+    }))
+
+    const mergedRecent = [...mappedMembers, ...mappedClasses]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 8)
+
+    setRecent(mergedRecent)
   }
 
   useEffect(() => { fetchFinancials() }, [filterType, customRange.start, customRange.end])
@@ -207,7 +260,9 @@ export default function Financials() {
   const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
   const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
   const totalItemsSold = items.reduce((sum, item) => sum + getSales(item.id), 0)
-  const grandTotal = stats.total + totalItemRevenue
+  
+  const totalSubscriptionsRevenue = stats.gymTotal + stats.classesTotal
+  const grandTotal = totalSubscriptionsRevenue + totalItemRevenue
 
   const handleSaveItem = (data) => {
     if (editingItem !== null) {
@@ -225,9 +280,9 @@ export default function Financials() {
   }
 
   const pieData = [
-    { name: 'Daily Subs', value: stats.daily },
-    { name: 'Weekly Subs', value: stats.weekly },
-    { name: 'Monthly Subs', value: stats.monthly },
+    { name: 'Gym Subscriptions', value: stats.gymTotal },
+    { name: 'Classes', value: stats.classesTotal },
+    { name: 'Shop Items', value: totalItemRevenue },
   ].filter(d => d.value > 0)
 
   const itemBarData = items.map(it => ({
@@ -287,20 +342,28 @@ export default function Financials() {
       </div>
 
       {/* Top KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
         <div className="bg-gradient-to-br from-electric-blue to-blue-700 p-6 rounded-xl shadow-lg flex items-center justify-between col-span-1 sm:col-span-2 xl:col-span-1">
           <div>
             <p className="text-blue-100 text-sm">Grand Total Revenue</p>
             <h3 className="text-3xl font-bold text-white">${grandTotal.toFixed(2)}</h3>
-            <p className="text-blue-200 text-xs mt-1">Memberships + Shop (in range)</p>
+            <p className="text-blue-200 text-xs mt-1">Gym + Classes + Shop (in range)</p>
           </div>
           <Wallet size={40} className="text-white/80" />
         </div>
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
-          <div className="p-3 bg-electric-green/10 rounded-lg text-electric-green"><TrendingUp size={28} /></div>
+          <div className="p-3 bg-electric-green/10 rounded-lg text-electric-green"><Dumbbell size={28} /></div>
           <div>
-            <p className="text-slate-400 text-sm">Membership Revenue</p>
-            <h3 className="text-2xl font-bold text-white">${stats.total.toFixed(2)}</h3>
+            <p className="text-slate-400 text-sm">Gym Subscriptions</p>
+            <h3 className="text-2xl font-bold text-white">${stats.gymTotal.toFixed(2)}</h3>
+          </div>
+        </div>
+        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+          <div className="p-3 bg-pink-500/10 rounded-lg text-pink-400"><Activity size={28} /></div>
+          <div>
+            <p className="text-slate-400 text-sm">Classes Revenue</p>
+            <h3 className="text-2xl font-bold text-white">${stats.classesTotal.toFixed(2)}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">Aerobics & Zumba</p>
           </div>
         </div>
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
@@ -308,65 +371,15 @@ export default function Financials() {
           <div>
             <p className="text-slate-400 text-sm">Shop Revenue</p>
             <h3 className="text-2xl font-bold text-white">${totalItemRevenue.toFixed(2)}</h3>
-          </div>
-        </div>
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
-          <div className="p-3 bg-pink-500/10 rounded-lg text-pink-400"><Package size={28} /></div>
-          <div>
-            <p className="text-slate-400 text-sm">Items Sold</p>
-            <h3 className="text-2xl font-bold text-white">{totalItemsSold}</h3>
-            <p className="text-slate-500 text-xs mt-0.5">in selected range</p>
-          </div>
-        </div>
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
-          <div className="p-3 bg-orange-500/10 rounded-lg text-orange-500"><DollarSign size={28} /></div>
-          <div>
-            <p className="text-slate-400 text-sm">Monthly Subs</p>
-            <h3 className="text-2xl font-bold text-white">${stats.monthly.toFixed(2)}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">{totalItemsSold} item{totalItemsSold !== 1 ? 's' : ''} sold</p>
           </div>
         </div>
       </div>
 
-      {/* Items Sold — per-item breakdown */}
-      {items.length > 0 && (
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <Package size={20} className="text-pink-400" /> Items Sold — Breakdown
-            <span className="ml-1 text-slate-500 text-sm font-normal">({totalItemsSold} total in range)</span>
-          </h3>
-          {totalItemsSold === 0 ? (
-            <p className="text-slate-500 text-sm py-4">No items sold in this range.</p>
-          ) : (
-            <div className="space-y-3">
-              {items
-                .map((item, idx) => ({ item, idx, qty: getSales(item.id) }))
-                .sort((a, b) => b.qty - a.qty)
-                .map(({ item, idx, qty }) => {
-                  const colorClass = ITEM_COLORS[idx % ITEM_COLORS.length]
-                  const maxQty = Math.max(...items.map(i => getSales(i.id)), 1)
-                  return (
-                    <div key={item.id} className="flex items-center gap-3">
-                      <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${colorClass}`}>
-                        {item.name}
-                      </span>
-                      <div className="flex-1">
-                        <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
-                          <div className="h-full bg-electric-blue rounded-full" style={{ width: `${(qty / maxQty) * 100}%` }} />
-                        </div>
-                      </div>
-                      <span className="shrink-0 text-white font-semibold text-sm w-16 text-right">{qty} {UNIT_LABEL[item.unit] || 'units'}</span>
-                    </div>
-                  )
-                })}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Revenue Breakdown</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Revenue Sources Breakdown</h3>
           {pieData.length === 0 ? (
             <div className="flex items-center justify-center h-[300px] text-slate-500 text-sm">No revenue data for this range.</div>
           ) : (
@@ -406,15 +419,19 @@ export default function Financials() {
         </div>
       </div>
 
-      {/* Membership Recent Transactions */}
+      {/* Membership & Classes Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
-          <h3 className="text-lg font-semibold text-white mb-4">Membership Breakdown</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Subscriptions Breakdown</h3>
           <div className="space-y-3">
             {[
-              { label: 'Daily Subscriptions', value: stats.daily, color: 'bg-electric-blue' },
-              { label: 'Weekly Subscriptions', value: stats.weekly, color: 'bg-electric-green' },
-              { label: 'Monthly Subscriptions', value: stats.monthly, color: 'bg-orange-500' },
+              { label: 'Gym - Daily', value: stats.gymDaily, total: totalSubscriptionsRevenue, color: 'bg-electric-blue' },
+              { label: 'Gym - Weekly', value: stats.gymWeekly, total: totalSubscriptionsRevenue, color: 'bg-electric-green' },
+              { label: 'Gym - 2 Weeks', value: stats.gymBiweekly, total: totalSubscriptionsRevenue, color: 'bg-purple-500' },
+              { label: 'Gym - 3 Weeks', value: stats.gymTriweekly, total: totalSubscriptionsRevenue, color: 'bg-indigo-500' },
+              { label: 'Gym - Monthly', value: stats.gymMonthly, total: totalSubscriptionsRevenue, color: 'bg-orange-500' },
+              { label: 'Classes - Daily', value: stats.classDaily, total: totalSubscriptionsRevenue, color: 'bg-yellow-500' },
+              { label: 'Classes - Monthly', value: stats.classMonthly, total: totalSubscriptionsRevenue, color: 'bg-pink-500' },
             ].map(row => (
               <div key={row.label} className="flex items-center gap-3">
                 <div className={`w-3 h-3 rounded-full ${row.color} shrink-0`} />
@@ -426,7 +443,7 @@ export default function Financials() {
                   <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
                     <div
                       className={`h-full ${row.color} rounded-full`}
-                      style={{ width: stats.total > 0 ? `${(row.value / stats.total) * 100}%` : '0%' }}
+                      style={{ width: row.total > 0 ? `${(row.value / row.total) * 100}%` : '0%' }}
                     />
                   </div>
                 </div>
@@ -438,13 +455,16 @@ export default function Financials() {
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Transactions</h3>
           <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-            {recent.map(m => (
-              <div key={m.id} className="flex justify-between items-center border-b border-navy-700 pb-3">
+            {recent.map(t => (
+              <div key={t.id} className="flex justify-between items-center border-b border-navy-700 pb-3">
                 <div>
-                  <p className="text-white font-medium">{`${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in Customer'}</p>
-                  <p className="text-slate-400 text-sm capitalize">{m.subscription_type} subscription</p>
+                  <p className="text-white font-medium">{t.name}</p>
+                  <p className="text-slate-400 text-sm capitalize">
+                    <span className={`inline-block w-2 h-2 rounded-full mr-1 align-middle ${t.type === 'Gym' ? 'bg-electric-green' : 'bg-pink-400'}`}></span>
+                    {t.sub_type} {t.type === 'Gym' ? 'subscription' : ''}
+                  </p>
                 </div>
-                <span className="text-electric-green font-semibold">+${m.amount_paid}</span>
+                <span className="text-electric-green font-semibold">+${t.amount}</span>
               </div>
             ))}
             {recent.length === 0 && <p className="text-slate-500 text-center py-8">No transactions in this range.</p>}
