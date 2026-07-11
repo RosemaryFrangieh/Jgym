@@ -1,125 +1,117 @@
-export const GYM_NAME = 'J-GYM'
-export const INSTAGRAM_URL = 'https://www.instagram.com/j_gym_ehden?igsh=ZmkxbG84MjVnMXI0' 
+// receiptPrinter.js
+// Prints a plain-text receipt to a Bluetooth thermal printer via the RawBT
+// Android app (https://www.rawbt.ru/). RawBT registers a "rawbt:" URL scheme —
+// navigating to rawbt:base64,<data> hands the print job straight to the app.
+// Falls back to the browser print dialog if RawBT isn't available (e.g. testing on desktop).
 
-const LINE_WIDTH = 32
+const RECEIPT_WIDTH = 32 // characters per line, standard for 58mm thermal paper
 
-const esc = (...codes) => String.fromCharCode(...codes)
-
-const ESC_INIT = esc(0x1b, 0x40)
-const ALIGN_LEFT = esc(0x1b, 0x61, 0)
-const ALIGN_CENTER = esc(0x1b, 0x61, 1)
-const BOLD_ON = esc(0x1b, 0x45, 1)
-const BOLD_OFF = esc(0x1b, 0x45, 0)
-const SIZE_NORMAL = esc(0x1d, 0x21, 0x00)
-const SIZE_DOUBLE = esc(0x1d, 0x21, 0x11)
-const FEED_CUT = '\n\n\n\n'
-
-const divider = () => '-'.repeat(LINE_WIDTH) + '\n'
-
-const row = (label, value) => {
-  const line = `${label}${value}`
-  return line.length > LINE_WIDTH ? line + '\n' : line + '\n'
+function classMemberDisplayName(member) {
+  const name = `${member.first_name || ''} ${member.last_name || ''}`.trim()
+  return name || 'Walk-in Customer'
 }
 
-const formatDate = (isoDate) => {
-  if (!isoDate) return '-'
-  const d = new Date(isoDate)
-  return isNaN(d) ? isoDate : d.toLocaleDateString()
+function capitalize(str) {
+  if (!str) return ''
+  return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
-const SUBSCRIPTION_LABELS = {
-  daily: 'Daily',
-  weekly: 'Weekly',
-  biweekly: '2 Weeks',
-  triweekly: '3 Weeks',
-  monthly: 'Monthly',
-  custom: 'Custom',
+function formatDate(date) {
+  if (!date) return '—'
+  return new Date(date).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
-// ---- ESC/POS QR code helpers ----
-// GS ( k command family — supported by nearly all ESC/POS thermal printers,
-// including the ones RawBT talks to.
-
-const qrCommand = (fn, pL, pH, cn, data = '') => {
-  return esc(0x1d, 0x28, 0x6b, pL, pH, cn, fn) + data
+function formatMoney(value) {
+  return `$${Number(value ?? 0).toFixed(2)}`
 }
 
-const buildQRCode = (text, moduleSize = 6) => {
-  let out = ''
-
-  // 1) Select model (model 2, most common)
-  out += esc(0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00)
-
-  // 2) Set module size (1-16 px per module)
-  out += esc(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, moduleSize)
-
-  // 3) Set error correction level (48=L, 49=M, 50=Q, 51=H)
-  out += esc(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31)
-
-  // 4) Store data in the symbol storage area
-  const dataBytes = new TextEncoder().encode(text)
-  const storeLen = dataBytes.length + 3 // cn + fn + m + data
-  const pL = storeLen & 0xff
-  const pH = (storeLen >> 8) & 0xff
-  out += esc(0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30) + text
-
-  // 5) Print the symbol
-  out += esc(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30)
-
-  return out
+function centerLine(text, width = RECEIPT_WIDTH) {
+  if (text.length >= width) return text
+  const padLeft = Math.floor((width - text.length) / 2)
+  return ' '.repeat(padLeft) + text
 }
 
-export function buildReceiptText(member) {
-  const discountLine =
-    member.discount_type && member.discount_type !== 'none' && Number(member.discount_value) > 0
-      ? `Discount: ${
-          member.discount_type === 'percentage'
-            ? `${member.discount_value}%`
-            : `$${Number(member.discount_value).toFixed(2)}`
-        }\n`
-      : ''
-
-  let r = ''
-  r += ESC_INIT
-  r += ALIGN_CENTER
-  r += SIZE_DOUBLE
-  r += `${GYM_NAME}\n`
-  r += SIZE_NORMAL
-  r += 'Membership Receipt\n'
-  r += divider()
-  r += ALIGN_LEFT
-  r += row('Member: ', `${member.first_name || ''} ${member.last_name || ''}`.trim() || 'Walk-in Customer')
-  r += row('Phone: ', member.phone_number || '-')
-  r += row('Plan: ', SUBSCRIPTION_LABELS[member.subscription_type] || member.subscription_type)
-  r += row('Start: ', formatDate(member.start_date))
-  r += row('End: ', formatDate(member.end_date))
-  r += divider()
-  r += row('Base Price: ', `$${Number(member.base_price).toFixed(2)}`)
-  if (discountLine) r += discountLine
-  r += divider()
-  r += BOLD_ON
-  r += SIZE_DOUBLE
-  r += `TOTAL: $${Number(member.amount_paid).toFixed(2)}\n`
-  r += SIZE_NORMAL
-  r += BOLD_OFF
-  r += divider()
-  r += ALIGN_CENTER
-  r += `${new Date().toLocaleString()}\n`
-  r += 'Thank you!\n'
-
-  // --- Instagram QR code ---
-  r += '\nFollow us on Instagram\n'
-  r += buildQRCode(INSTAGRAM_URL)
-  r += '\n'
-
-  r += FEED_CUT
-
-  return r
+function ruleLine(char = '-', width = RECEIPT_WIDTH) {
+  return char.repeat(width)
 }
 
+function labelValueLine(label, value, width = RECEIPT_WIDTH) {
+  const gap = Math.max(1, width - label.length - value.length)
+  return `${label}${' '.repeat(gap)}${value}`
+}
+
+/**
+ * Builds the plain-text receipt body for any membership-like record
+ * (works for both regular members and class members since it only
+ * touches fields common to both tables).
+ */
+function buildReceiptText(member) {
+  const lines = []
+
+  lines.push(centerLine('J-GYM'))
+  lines.push(centerLine('Membership Receipt'))
+  lines.push(ruleLine('='))
+  lines.push(`Name:  ${classMemberDisplayName(member)}`)
+  if (member.phone_number) lines.push(`Phone: ${member.phone_number}`)
+  if (member.class_type) lines.push(`Class: ${capitalize(member.class_type)}`)
+  lines.push(`Plan:  ${capitalize(member.subscription_type)}`)
+  lines.push(ruleLine('-'))
+  lines.push(labelValueLine('Start:', formatDate(member.start_date)))
+  lines.push(labelValueLine('End:', formatDate(member.end_date)))
+  lines.push(ruleLine('-'))
+  lines.push(labelValueLine('Base Price:', formatMoney(member.base_price)))
+  if (member.discount_type && member.discount_type !== 'none') {
+    const discountLabel =
+      member.discount_type === 'percentage'
+        ? `${member.discount_value}%`
+        : formatMoney(member.discount_value)
+    lines.push(labelValueLine('Discount:', discountLabel))
+  }
+  lines.push(ruleLine('-'))
+  lines.push(labelValueLine('TOTAL PAID:', formatMoney(member.amount_paid)))
+  lines.push(ruleLine('='))
+  lines.push('')
+  lines.push(centerLine('Thank you!'))
+  lines.push('\n\n\n') // feed paper before cut
+
+  return lines.join('\n')
+}
+
+function fallbackBrowserPrint(text) {
+  const printWindow = window.open('', '_blank', 'width=380,height=600')
+  if (!printWindow) {
+    alert(
+      'Could not open the print window (pop-up blocked), and the RawBT app was not detected. ' +
+      'Please allow pop-ups, or install RawBT on this Android device to print directly to the thermal printer.'
+    )
+    return
+  }
+  printWindow.document.write(
+    `<pre style="font-family: monospace; font-size: 13px; white-space: pre-wrap; padding: 16px;">${text}</pre>`
+  )
+  printWindow.document.close()
+  printWindow.focus()
+  printWindow.print()
+}
+
+/**
+ * Sends a receipt to the RawBT app for printing on a paired Bluetooth
+ * thermal printer. Accepts a member/class_member record.
+ */
 export function printReceiptViaRawBT(member) {
-  const receiptText = buildReceiptText(member)
-  const encoded = encodeURIComponent(receiptText)
-  const intentUrl = `intent:${encoded}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`
-  window.location.href = intentUrl
+  const text = buildReceiptText(member)
+
+  try {
+    // RawBT scheme: rawbt:base64,<base64-encoded UTF-8 text>
+    const encoded = btoa(unescape(encodeURIComponent(text)))
+    const url = `rawbt:base64,${encoded}`
+    window.location.href = url
+  } catch (err) {
+    console.error('RawBT print failed, falling back to browser print dialog:', err)
+    fallbackBrowserPrint(text)
+  }
 }
