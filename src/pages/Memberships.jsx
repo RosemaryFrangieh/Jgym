@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
 import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Eye, RefreshCw, Calendar, Printer } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
+import { useAuth } from '../context/AuthContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,12 @@ export function memberDisplayName(m) {
 }
 function toYearMonth(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+// Returns today's date as 'YYYY-MM-DD' (local time), used to default the custom range inputs
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // Returns a display label like "June 2026"
@@ -374,14 +381,17 @@ function MonthNavigator({ value, onChange }) {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function Memberships() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const [members, setMembers]             = useState([])
   const [loading, setLoading]             = useState(true)
   const [search, setSearch]               = useState('')
   const [filters, setFilters]             = useState(DEFAULT_FILTERS)
   const [selectedMonth, setSelectedMonth] = useState(toYearMonth(new Date()))
   const [dateMode, setDateMode]           = useState('month') // 'month' (default) | 'custom'
-  const [customFrom, setCustomFrom]       = useState('')
-  const [customTo, setCustomTo]           = useState('')
+  const [customFrom, setCustomFrom]       = useState(todayStr())
+  const [customTo, setCustomTo]           = useState(todayStr())
   const [page, setPage]                   = useState(1)
   const [isModalOpen, setIsModalOpen]     = useState(false)
   const [currentMember, setCurrentMember] = useState(null)
@@ -477,6 +487,9 @@ export default function Memberships() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {!isAdmin && (
+            <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
+          )}
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
             className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
@@ -486,48 +499,50 @@ export default function Memberships() {
         </div>
       </div>
 
-      {/* ── Date range mode ── */}
-      <div className="bg-navy-800 rounded-xl border border-navy-700 p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex items-center gap-2 bg-navy-900 border border-navy-700 rounded-lg p-1">
-          <button
-            onClick={() => { setDateMode('month'); setPage(1) }}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${dateMode === 'month' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
-          >Monthly</button>
-          <button
-            onClick={() => { setDateMode('custom'); setPage(1) }}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${dateMode === 'custom' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
-          >Custom Range</button>
-        </div>
-
-        {dateMode === 'month' ? (
-          <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-2">
-              <label className="text-slate-400 text-sm">From</label>
-              <input
-                type="date"
-                value={customFrom}
-                onChange={e => { setCustomFrom(e.target.value); setPage(1) }}
-                className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-slate-400 text-sm">To</label>
-              <input
-                type="date"
-                value={customTo}
-                min={customFrom || undefined}
-                onChange={e => { setCustomTo(e.target.value); setPage(1) }}
-                className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue"
-              />
-            </div>
-            {!useCustomRange && (
-              <span className="text-slate-500 text-xs">Select both dates to apply the custom range.</span>
-            )}
+      {/* ── Date range mode (admin only) ── */}
+      {isAdmin && (
+        <div className="bg-navy-800 rounded-xl border border-navy-700 p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2 bg-navy-900 border border-navy-700 rounded-lg p-1">
+            <button
+              onClick={() => { setDateMode('month'); setPage(1) }}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${dateMode === 'month' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
+            >Monthly</button>
+            <button
+              onClick={() => { setDateMode('custom'); setPage(1) }}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${dateMode === 'custom' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
+            >Custom Range</button>
           </div>
-        )}
-      </div>
+
+          {dateMode === 'month' ? (
+            <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <label className="text-slate-400 text-sm">From</label>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => { setCustomFrom(e.target.value); setPage(1) }}
+                  className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-slate-400 text-sm">To</label>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={e => { setCustomTo(e.target.value); setPage(1) }}
+                  className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue"
+                />
+              </div>
+              {!useCustomRange && (
+                <span className="text-slate-500 text-xs">Select both dates to apply the custom range.</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Monthly summary cards ── */}
       <div className="grid grid-cols-4 gap-4 mb-6">
