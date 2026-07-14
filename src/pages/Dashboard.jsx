@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
+import { useAuth } from '../context/AuthContext'
 import { Users, UserPlus, AlertTriangle, Calendar, RefreshCw, ShoppingBag, Plus, Minus } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
@@ -17,6 +18,9 @@ const localDateKey = (d) => {
 const todayKey = () => localDateKey(new Date())
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const [stats, setStats] = useState({ total: 0, active: 0, newThisMonth: 0, expiring: [] })
   const [chartData, setChartData] = useState([
     { name: 'Daily', count: 0 }, { name: 'Weekly', count: 0 }, { name: 'Monthly', count: 0 }, { name: 'Custom', count: 0 }
@@ -59,7 +63,10 @@ export default function Dashboard() {
     if (members) {
       const active = members.filter(m => new Date(m.end_date) >= today)
       const newThisMonth = members.filter(m => new Date(m.start_date) >= startOfMonth)
-      const expiring = members.filter(m => { const e = new Date(m.end_date); return e >= today && e <= twoDaysFromNow })
+      const expiring = members.filter(m => {
+        const e = new Date(m.end_date)
+        return e >= today && e <= twoDaysFromNow && m.subscription_type !== 'daily'
+      })
       setStats({ total: members.length, active: active.length, newThisMonth: newThisMonth.length, expiring })
       setChartData([
         { name: 'Daily', count: active.filter(m => m.subscription_type === 'daily').length },
@@ -101,37 +108,59 @@ export default function Dashboard() {
     if (error) setTodaySales(prev => ({ ...prev, [id]: current })) // rollback on failure
   }
 
+  // Lets the field be typed into directly (e.g. type "100") instead of only +/-.
+  // Updates local state immediately as they type; only writes to Supabase once they
+  // click away or press Enter, so we're not firing a request per keystroke.
+  const setSalesDraft = (id, value) => {
+    const next = value === '' ? 0 : Math.max(0, parseInt(value, 10) || 0)
+    setTodaySales(prev => ({ ...prev, [id]: next }))
+  }
+
+  const commitSales = async (id) => {
+    const value = todaySales[id] ?? 0
+    await supabase
+      .from('shop_sales')
+      .upsert(
+        { item_id: id, sale_date: todayKey(), quantity: value, updated_at: new Date().toISOString() },
+        { onConflict: 'item_id,sale_date' }
+      )
+  }
+
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
-          <div className="p-3 bg-electric-blue/10 rounded-lg text-electric-blue"><Users size={28} /></div>
-          <div><p className="text-slate-400 text-sm">Total Active Members</p><h3 className="text-2xl font-bold text-white">{stats.active}</h3></div>
+      {/* Summary Cards — admin only */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+            <div className="p-3 bg-electric-blue/10 rounded-lg text-electric-blue"><Users size={28} /></div>
+            <div><p className="text-slate-400 text-sm">Total Active Members</p><h3 className="text-2xl font-bold text-white">{stats.active}</h3></div>
+          </div>
+          <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+            <div className="p-3 bg-electric-green/10 rounded-lg text-electric-green"><UserPlus size={28} /></div>
+            <div><p className="text-slate-400 text-sm">New This Month</p><h3 className="text-2xl font-bold text-white">{stats.newThisMonth}</h3></div>
+          </div>
+          <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+            <div className="p-3 bg-orange-500/10 rounded-lg text-orange-500"><AlertTriangle size={28} /></div>
+            <div><p className="text-slate-400 text-sm">Expiring (≤ 2 days)</p><h3 className="text-2xl font-bold text-white">{stats.expiring.length}</h3></div>
+          </div>
         </div>
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
-          <div className="p-3 bg-electric-green/10 rounded-lg text-electric-green"><UserPlus size={28} /></div>
-          <div><p className="text-slate-400 text-sm">New This Month</p><h3 className="text-2xl font-bold text-white">{stats.newThisMonth}</h3></div>
-        </div>
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
-          <div className="p-3 bg-orange-500/10 rounded-lg text-orange-500"><AlertTriangle size={28} /></div>
-          <div><p className="text-slate-400 text-sm">Expiring (≤ 2 days)</p><h3 className="text-2xl font-bold text-white">{stats.expiring.length}</h3></div>
-        </div>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
-          <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><Calendar size={20} /> Subscription Breakdown</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="name" stroke="#94a3b8" />
-              <YAxis stroke="#94a3b8" allowDecimals={false} />
-              <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }} />
-              <Bar dataKey="count" fill="#00ff88" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-2' : ''} gap-6`}>
+        {isAdmin && (
+          <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><Calendar size={20} /> Subscription Breakdown</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="name" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" allowDecimals={false} />
+                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                <Bar dataKey="count" fill="#00ff88" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><AlertTriangle size={20} className="text-orange-500" /> Expiring Soon</h3>
@@ -208,7 +237,16 @@ export default function Dashboard() {
                             onClick={() => adjustSales(item.id, -1)}
                             className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-navy-700 transition-colors"
                           ><Minus size={13} /></button>
-                          <span className="text-white font-semibold w-8 text-center">{sold}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            inputMode="numeric"
+                            value={sold}
+                            onChange={e => setSalesDraft(item.id, e.target.value)}
+                            onBlur={() => commitSales(item.id)}
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur() }}
+                            className="w-16 text-center bg-navy-900 border border-navy-700 rounded-md px-1 py-1 text-white font-semibold focus:outline-none focus:border-electric-blue [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                           <button
                             onClick={() => adjustSales(item.id, 1)}
                             className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:text-electric-green hover:bg-electric-green/10 transition-colors"

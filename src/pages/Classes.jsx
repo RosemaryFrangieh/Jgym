@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import ClassMemberModal from '../components/ClassMemberModal'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
+import { useAuth } from '../context/AuthContext'
 import {
   Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight,
   CheckCircle, XCircle, Eye, RefreshCw, Calendar, Printer,
@@ -358,6 +359,9 @@ function MonthNavigator({ value, onChange }) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function Classes() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
   const [members, setMembers]               = useState([])
   const [loading, setLoading]               = useState(true)
   const [search, setSearch]                 = useState('')
@@ -446,27 +450,29 @@ export default function Classes() {
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members This Month</p>
-          <p className="text-2xl font-bold text-white">{loading ? '—' : filtered.length}</p>
+      {/* Summary — admin only */}
+      {isAdmin && (
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
+            <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members This Month</p>
+            <p className="text-2xl font-bold text-white">{loading ? '—' : filtered.length}</p>
+          </div>
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
+            <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Active</p>
+            <p className="text-2xl font-bold text-green-400">{loading ? '—' : activeCount}</p>
+          </div>
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
+            <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Expired</p>
+            <p className="text-2xl font-bold text-red-400">{loading ? '—' : expiredCount}</p>
+          </div>
+          <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
+            <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Daily / Monthly</p>
+            <p className="text-2xl font-bold text-white">
+              {loading ? '—' : `${filtered.filter(m=>m.subscription_type==='daily').length} / ${filtered.filter(m=>m.subscription_type==='monthly').length}`}
+            </p>
+          </div>
         </div>
-        <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Active</p>
-          <p className="text-2xl font-bold text-green-400">{loading ? '—' : activeCount}</p>
-        </div>
-        <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Expired</p>
-          <p className="text-2xl font-bold text-red-400">{loading ? '—' : expiredCount}</p>
-        </div>
-        <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Daily / Monthly</p>
-          <p className="text-2xl font-bold text-white">
-            {loading ? '—' : `${filtered.filter(m=>m.subscription_type==='daily').length} / ${filtered.filter(m=>m.subscription_type==='monthly').length}`}
-          </p>
-        </div>
-      </div>
+      )}
 
       {/* Filters */}
       <div className="bg-navy-800 rounded-xl border border-navy-700 p-4 mb-6 space-y-4">
@@ -528,9 +534,7 @@ export default function Classes() {
         </div>
 
         <div className="flex items-center justify-between pt-1 border-t border-navy-700">
-          <span className="text-slate-400 text-sm">
-            {loading ? 'Loading…' : <><span className="text-white font-semibold">{filtered.length}</span> member{filtered.length !== 1 ? 's' : ''} found</>}
-          </span>
+         
           {hasActiveFilters && (
             <button onClick={clearFilters} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors">
               <X size={14} /> Clear filters
