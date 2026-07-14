@@ -23,20 +23,6 @@ const localDateKey = (d) => {
 }
 const todayKey = () => localDateKey(new Date())
 
-function migrateItemSales(raw) {
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return {}
-    const keys = Object.keys(parsed)
-    if (keys.length === 0) return {}
-    if (/^\d{4}-\d{2}-\d{2}$/.test(keys[0])) return parsed
-    return { [todayKey()]: parsed }
-  } catch {
-    return {}
-  }
-}
-
 const FILTER_OPTIONS = [
   { id: 'day', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
@@ -270,19 +256,13 @@ export default function Financials() {
   const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
   const [showUpgradedModal, setShowUpgradedModal] = useState(false)
 
-  const [items, setItems] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('gym_shop_items') || '[]') } catch { return [] }
-  })
-  const [itemSales, setItemSales] = useState(() => migrateItemSales(localStorage.getItem('gym_item_sales')))
+  const [items, setItems] = useState([])
+  const [rangeSales, setRangeSales] = useState([]) // rows: { item_id, quantity, sale_date } within current range
   const [showItemModal, setShowItemModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => {
-    const onFocus = () => setItemSales(migrateItemSales(localStorage.getItem('gym_item_sales')))
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [])
+  useEffect(() => { fetchShopItems() }, [])
 
   const getRange = () => {
     const today = new Date()
@@ -356,15 +336,24 @@ export default function Financials() {
     setRecent(mergedRecent)
   }
 
-  useEffect(() => { fetchFinancials() }, [filterType, customRange.start, customRange.end])
-  useEffect(() => { localStorage.setItem('gym_shop_items', JSON.stringify(items)) }, [items])
-
-  const getSales = (id) => {
-    return Object.entries(itemSales).reduce((sum, [dateKey, dayData]) => {
-      if (dateKey >= range.start && dateKey <= range.end) return sum + (dayData[id] ?? 0)
-      return sum
-    }, 0)
+  const fetchShopItems = async () => {
+    const { data } = await supabase.from('shop_items').select('*').order('created_at', { ascending: true })
+    setItems(data || [])
   }
+
+  const fetchShopSales = async () => {
+    const { data } = await supabase
+      .from('shop_sales')
+      .select('item_id, quantity, sale_date')
+      .gte('sale_date', range.start)
+      .lte('sale_date', range.end)
+    setRangeSales(data || [])
+  }
+
+  useEffect(() => { fetchFinancials() }, [filterType, customRange.start, customRange.end])
+  useEffect(() => { fetchShopSales() }, [filterType, customRange.start, customRange.end])
+
+  const getSales = (id) => rangeSales.reduce((sum, row) => row.item_id === id ? sum + row.quantity : sum, 0)
 
   const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
   const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
@@ -373,17 +362,25 @@ export default function Financials() {
   const totalSubscriptionsRevenue = stats.gymTotal + stats.classesTotal
   const grandTotal = totalSubscriptionsRevenue + totalItemRevenue
 
-  const handleSaveItem = (data) => {
-    if (editingItem !== null) {
-      setItems(prev => prev.map((it, i) => i === editingItem ? { ...it, ...data } : it))
+  const handleSaveItem = async (data) => {
+    const { id: _id, created_at: _created_at, ...payload } = data
+    if (editingItem) {
+      const { error } = await supabase.from('shop_items').update(payload).eq('id', editingItem.id)
+      if (!error) setItems(prev => prev.map(it => it.id === editingItem.id ? { ...it, ...payload } : it))
     } else {
-      setItems(prev => [...prev, { id: Date.now(), ...data }])
+      const { data: inserted, error } = await supabase.from('shop_items').insert(payload).select().single()
+      if (!error && inserted) setItems(prev => [...prev, inserted])
     }
     setShowItemModal(false); setEditingItem(null)
   }
 
-  const handleDeleteItem = (idx) => {
-    setItems(prev => prev.filter((_, i) => i !== idx)); setDeleteConfirm(null)
+  const handleDeleteItem = async (id) => {
+    const { error } = await supabase.from('shop_items').delete().eq('id', id)
+    if (!error) {
+      setItems(prev => prev.filter(it => it.id !== id))
+      setRangeSales(prev => prev.filter(row => row.item_id !== id)) // cascades in DB too
+    }
+    setDeleteConfirm(null)
   }
 
   const pieData = [
@@ -602,8 +599,8 @@ export default function Financials() {
                       <Package size={12} /> {item.unit}
                     </span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditingItem(idx); setShowItemModal(true) }} className="p-1.5 rounded-lg text-slate-500 hover:text-electric-blue hover:bg-electric-blue/10 transition-colors"><Pencil size={14} /></button>
-                      <button onClick={() => setDeleteConfirm(idx)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /></button>
+                      <button onClick={() => { setEditingItem(item); setShowItemModal(true) }} className="p-1.5 rounded-lg text-slate-500 hover:text-electric-blue hover:bg-electric-blue/10 transition-colors"><Pencil size={14} /></button>
+                      <button onClick={() => setDeleteConfirm(item.id)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /></button>
                     </div>
                   </div>
                   <h4 className="text-white font-semibold text-base mb-1 truncate">{item.name}</h4>
@@ -623,12 +620,12 @@ export default function Financials() {
                       {item.stock === 0 ? '⚠ Out of stock' : `${item.stock} in stock`}
                     </p>
                   )}
-                  {deleteConfirm === idx && (
+                  {deleteConfirm === item.id && (
                     <div className="mt-3 pt-3 border-t border-navy-700">
                       <p className="text-red-400 text-xs mb-2">Remove this item?</p>
                       <div className="flex gap-2">
                         <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-1.5 rounded-lg text-xs border border-navy-600 text-slate-400 hover:text-white transition-colors">Cancel</button>
-                        <button onClick={() => handleDeleteItem(idx)} className="flex-1 py-1.5 rounded-lg text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium">Delete</button>
+                        <button onClick={() => handleDeleteItem(item.id)} className="flex-1 py-1.5 rounded-lg text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium">Delete</button>
                       </div>
                     </div>
                   )}
@@ -641,7 +638,7 @@ export default function Financials() {
 
       {showItemModal && (
         <ItemModal
-          item={editingItem !== null ? items[editingItem] : null}
+          item={editingItem}
           onClose={() => { setShowItemModal(false); setEditingItem(null) }}
           onSave={handleSaveItem}
         />

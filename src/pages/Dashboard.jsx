@@ -16,21 +16,6 @@ const localDateKey = (d) => {
 }
 const todayKey = () => localDateKey(new Date())
 
-// Migrate old { itemId: count } format to new date-keyed format
-function migrateItemSales(raw) {
-  if (!raw) return {}
-  try {
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return {}
-    const keys = Object.keys(parsed)
-    if (keys.length === 0) return {}
-    if (/^\d{4}-\d{2}-\d{2}$/.test(keys[0])) return parsed
-    return { [todayKey()]: parsed }
-  } catch {
-    return {}
-  }
-}
-
 export default function Dashboard() {
   const [stats, setStats] = useState({ total: 0, active: 0, newThisMonth: 0, expiring: [] })
   const [chartData, setChartData] = useState([
@@ -39,16 +24,32 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [renewMember, setRenewMember] = useState(null)
 
-  const [items, setItems] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('gym_shop_items') || '[]') } catch { return [] }
-  })
-  const [itemSales, setItemSales] = useState(() => migrateItemSales(localStorage.getItem('gym_item_sales')))
+  const [items, setItems] = useState([])
+  const [todaySales, setTodaySales] = useState({}) // { itemId: qty } for today only
+  const [shopLoading, setShopLoading] = useState(true)
 
-  useEffect(() => { fetchDashboardData() }, [])
+  useEffect(() => { fetchDashboardData(); fetchShopData() }, [])
 
+  // Keep shop data fresh if the Financials page (or another tab) added/edited items
   useEffect(() => {
-    localStorage.setItem('gym_item_sales', JSON.stringify(itemSales))
-  }, [itemSales])
+    const onFocus = () => fetchShopData()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  const fetchShopData = async () => {
+    setShopLoading(true)
+    const tk = todayKey()
+    const [itemsRes, salesRes] = await Promise.all([
+      supabase.from('shop_items').select('*').order('created_at', { ascending: true }),
+      supabase.from('shop_sales').select('item_id, quantity').eq('sale_date', tk),
+    ])
+    setItems(itemsRes.data || [])
+    const salesMap = {}
+    for (const row of salesRes.data || []) salesMap[row.item_id] = row.quantity
+    setTodaySales(salesMap)
+    setShopLoading(false)
+  }
 
   const fetchDashboardData = async () => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -81,21 +82,23 @@ export default function Dashboard() {
   const getDaysColor = (d) => d === 0 ? 'text-red-500' : d === 1 ? 'text-red-400' : d === 2 ? 'text-orange-400' : 'text-yellow-400'
   const getDaysLabel = (d) => d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `${d} days`
 
-  // Today-only sales — automatically resets to 0 each new day
-  const todaySales = itemSales[todayKey()] ?? {}
+  // Today-only sales — automatically resets to 0 each new day (no row for today yet)
   const getSales = (id) => todaySales[id] ?? 0
   const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
   const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
   const totalItemsSoldToday = items.reduce((sum, item) => sum + getSales(item.id), 0)
 
-  const adjustSales = (id, delta) => {
-    setItemSales(prev => {
-      const tk = todayKey()
-      const td = prev[tk] ?? {}
-      const current = td[id] ?? 0
-      const next = Math.max(0, current + delta)
-      return { ...prev, [tk]: { ...td, [id]: next } }
-    })
+  const adjustSales = async (id, delta) => {
+    const current = todaySales[id] ?? 0
+    const next = Math.max(0, current + delta)
+    setTodaySales(prev => ({ ...prev, [id]: next })) // optimistic update
+    const { error } = await supabase
+      .from('shop_sales')
+      .upsert(
+        { item_id: id, sale_date: todayKey(), quantity: next, updated_at: new Date().toISOString() },
+        { onConflict: 'item_id,sale_date' }
+      )
+    if (error) setTodaySales(prev => ({ ...prev, [id]: current })) // rollback on failure
   }
 
   return (
