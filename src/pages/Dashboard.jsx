@@ -52,13 +52,13 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    const threeDaysFromNow = new Date(today); threeDaysFromNow.setDate(today.getDate() + 3); threeDaysFromNow.setHours(23, 59, 59, 999)
+    const twoDaysFromNow = new Date(today); twoDaysFromNow.setDate(today.getDate() + 2); twoDaysFromNow.setHours(23, 59, 59, 999)
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     const { data: members } = await supabase.from('members').select('*')
     if (members) {
       const active = members.filter(m => new Date(m.end_date) >= today)
       const newThisMonth = members.filter(m => new Date(m.start_date) >= startOfMonth)
-      const expiring = members.filter(m => { const e = new Date(m.end_date); return e >= today && e <= threeDaysFromNow })
+      const expiring = members.filter(m => { const e = new Date(m.end_date); return e >= today && e <= twoDaysFromNow })
       setStats({ total: members.length, active: active.length, newThisMonth: newThisMonth.length, expiring })
       setChartData([
         { name: 'Daily', count: active.filter(m => m.subscription_type === 'daily').length },
@@ -112,7 +112,7 @@ export default function Dashboard() {
         </div>
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
           <div className="p-3 bg-orange-500/10 rounded-lg text-orange-500"><AlertTriangle size={28} /></div>
-          <div><p className="text-slate-400 text-sm">Expiring (≤ 3 days)</p><h3 className="text-2xl font-bold text-white">{stats.expiring.length}</h3></div>
+          <div><p className="text-slate-400 text-sm">Expiring (≤ 2 days)</p><h3 className="text-2xl font-bold text-white">{stats.expiring.length}</h3></div>
         </div>
       </div>
 

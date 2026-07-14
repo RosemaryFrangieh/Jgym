@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { X } from 'lucide-react'
 
 const FIXED_PRICES = { daily: 5, monthly: 40 }
-const DURATION_DAYS = { daily: 1, monthly: 30 }
+const DURATION_DAYS = { daily: 0, monthly: 30 }
 
 export default function ClassMemberModal({ member, onClose }) {
   const [formData, setFormData] = useState({

@@ -85,7 +85,7 @@ export default function MemberModal({ member, onClose }) {
     if (isCustom) {
       endDateObj = new Date(formData.end_date)
     } else {
-      const duration = formData.subscription_type === 'daily' ? 1 : formData.subscription_type === 'weekly' ? 7 : formData.subscription_type === 'biweekly' ? 14 : formData.subscription_type === 'triweekly' ? 21 : 30
+      const duration = formData.subscription_type === 'daily' ? 0 : formData.subscription_type === 'weekly' ? 7 : formData.subscription_type === 'biweekly' ? 14 : formData.subscription_type === 'triweekly' ? 21 : 30
       const startDateObj = new Date(formData.start_date)
       endDateObj = new Date(startDateObj)
       endDateObj.setDate(endDateObj.getDate() + duration)

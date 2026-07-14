@@ -17,9 +17,9 @@ export function isMembershipExpired(endDate) {
 export function computeEndDate(member) {
   if (!member.start_date) return member.end_date || null
   if (member.subscription_type === 'custom') return member.end_date || null
-  const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
+  const durationMap = { daily: 0, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
   const days = durationMap[member.subscription_type] ?? 0
-  if (days === 0) return member.end_date || null
+  if (days === 0 && member.subscription_type !== 'daily') return member.end_date || null
   const start = new Date(member.start_date)
   start.setDate(start.getDate() + days)
   return start.toISOString().split('T')[0]
@@ -229,7 +229,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     if (isCustom) {
       endDateStr = customEndDate
     } else {
-      const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
+      const durationMap = { daily: 0, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
       const start = new Date(startDate)
       start.setDate(start.getDate() + durationMap[subscriptionType])
       endDateStr = start.toISOString().split('T')[0]
@@ -379,15 +379,22 @@ export default function Memberships() {
   const [search, setSearch]               = useState('')
   const [filters, setFilters]             = useState(DEFAULT_FILTERS)
   const [selectedMonth, setSelectedMonth] = useState(toYearMonth(new Date()))
+  const [dateMode, setDateMode]           = useState('month') // 'month' (default) | 'custom'
+  const [customFrom, setCustomFrom]       = useState('')
+  const [customTo, setCustomTo]           = useState('')
   const [page, setPage]                   = useState(1)
   const [isModalOpen, setIsModalOpen]     = useState(false)
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
 
+  const useCustomRange = dateMode === 'custom' && customFrom && customTo
+
   const fetchMembers = useCallback(async () => {
     setLoading(true)
-    const { from, to } = monthBounds(selectedMonth)
+    const { from, to } = useCustomRange
+      ? { from: customFrom, to: customTo }
+      : monthBounds(selectedMonth)
 
     let query = supabase
       .from('members')
@@ -403,7 +410,7 @@ export default function Memberships() {
     const { data, error } = await query
     if (!error) setMembers(data || [])
     setLoading(false)
-  }, [filters, selectedMonth])
+  }, [filters, selectedMonth, useCustomRange, customFrom, customTo])
 
   useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
 
@@ -463,10 +470,13 @@ export default function Memberships() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-white">Memberships</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Showing records created in {formatYearMonth(selectedMonth)}</p>
+          <p className="text-slate-400 text-sm mt-0.5">
+            {useCustomRange
+              ? `Showing records created from ${new Date(customFrom).toLocaleDateString()} to ${new Date(customTo).toLocaleDateString()}`
+              : `Showing records created in ${formatYearMonth(selectedMonth)}`}
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
             className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
@@ -474,6 +484,49 @@ export default function Memberships() {
             <Plus size={20} /> Add Member
           </button>
         </div>
+      </div>
+
+      {/* ── Date range mode ── */}
+      <div className="bg-navy-800 rounded-xl border border-navy-700 p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-2 bg-navy-900 border border-navy-700 rounded-lg p-1">
+          <button
+            onClick={() => { setDateMode('month'); setPage(1) }}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${dateMode === 'month' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
+          >Monthly</button>
+          <button
+            onClick={() => { setDateMode('custom'); setPage(1) }}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${dateMode === 'custom' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
+          >Custom Range</button>
+        </div>
+
+        {dateMode === 'month' ? (
+          <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <label className="text-slate-400 text-sm">From</label>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => { setCustomFrom(e.target.value); setPage(1) }}
+                className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-slate-400 text-sm">To</label>
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={e => { setCustomTo(e.target.value); setPage(1) }}
+                className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-electric-blue"
+              />
+            </div>
+            {!useCustomRange && (
+              <span className="text-slate-500 text-xs">Select both dates to apply the custom range.</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Monthly summary cards ── */}
@@ -578,8 +631,12 @@ export default function Memberships() {
             ) : paginated.length === 0 ? (
               <tr>
                 <td colSpan={9} className="p-8 text-center">
-                  <p className="text-slate-500">No memberships found for {formatYearMonth(selectedMonth)}.</p>
-                  <p className="text-slate-600 text-sm mt-1">Try navigating to a different month.</p>
+                  <p className="text-slate-500">
+                    No memberships found {useCustomRange ? 'for the selected date range' : `for ${formatYearMonth(selectedMonth)}`}.
+                  </p>
+                  <p className="text-slate-600 text-sm mt-1">
+                    Try {useCustomRange ? 'adjusting the date range' : 'navigating to a different month'}.
+                  </p>
                 </td>
               </tr>
             ) : (

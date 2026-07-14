@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Memberships from './pages/Memberships'
+import Classes from './pages/Classes'
 import Financials from './pages/Financials'
 import Login from './pages/Login'
 import AccessDenied from './pages/AccessDenied'
@@ -80,6 +81,14 @@ function AppRoutes() {
           element={
             <PageGuard path="/memberships">
               <Memberships />
+            </PageGuard>
+          }
+        />
+        <Route
+          path="classes"
+          element={
+            <PageGuard path="/classes">
+              <Classes />
             </PageGuard>
           }
         />

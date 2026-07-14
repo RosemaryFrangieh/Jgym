@@ -17,9 +17,9 @@ export function isClassExpired(endDate) {
 
 export function computeClassEndDate(member) {
   if (!member.start_date) return member.end_date || null
-  const durationMap = { daily: 1, monthly: 30 }
+  const durationMap = { daily: 0, monthly: 30 }
   const days = durationMap[member.subscription_type] ?? 0
-  if (days === 0) return member.end_date || null
+  if (days === 0 && member.subscription_type !== 'daily') return member.end_date || null
   const start = new Date(member.start_date)
   start.setDate(start.getDate() + days)
   return start.toISOString().split('T')[0]
@@ -222,7 +222,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     setError(null)
     if (infoMissing) { setError('Please enter a name and phone number for this membership.'); return }
     setLoading(true)
-    const durationMap = { daily: 1, monthly: 30 }
+    const durationMap = { daily: 0, monthly: 30 }
     const start = new Date(startDate)
     start.setDate(start.getDate() + durationMap[subscriptionType])
     const endDateStr = start.toISOString().split('T')[0]
