@@ -18,7 +18,7 @@ export function isMembershipExpired(endDate) {
 export function computeEndDate(member) {
   if (!member.start_date) return member.end_date || null
   if (member.subscription_type === 'custom') return member.end_date || null
-  const durationMap = { daily: 0, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
+  const durationMap = { daily: 0, weekly: 7, biweekly: 14, triweekly: 21, monthly: 32 }
   const days = durationMap[member.subscription_type] ?? 0
   if (days === 0 && member.subscription_type !== 'daily') return member.end_date || null
   const start = new Date(member.start_date)
@@ -236,7 +236,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     if (isCustom) {
       endDateStr = customEndDate
     } else {
-      const durationMap = { daily: 0, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
+      const durationMap = { daily: 0, weekly: 7, biweekly: 14, triweekly: 21, monthly: 32 }
       const start = new Date(startDate)
       start.setDate(start.getDate() + durationMap[subscriptionType])
       endDateStr = start.toISOString().split('T')[0]
