@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
 import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
+import { useAuth } from '../context/AuthContext'
 ​
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 ​
@@ -408,6 +409,8 @@ function MonthNavigator({ value, onChange }) {
 // ─── Main component ──────────────────────────────────────────────────────────
 ​
 export default function Memberships() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [members, setMembers]             = useState([])
   const [loading, setLoading]             = useState(true)
   const [search, setSearch]               = useState('')
@@ -418,10 +421,19 @@ export default function Memberships() {
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
+  // Admin-only date scope: 'monthly' (default) or 'custom' range
+  const [rangeMode, setRangeMode] = useState('monthly')
+  const [customRange, setCustomRange] = useState(() => {
+    const t = new Date().toISOString().split('T')[0]
+    return { start: t, end: t }
+  })
 ​
   const fetchMembers = useCallback(async () => {
     setLoading(true)
-    const { from, to } = monthBounds(selectedMonth)
+    const useCustom = isAdmin && rangeMode === 'custom'
+    const { from, to } = useCustom
+      ? { from: customRange.start, to: customRange.end }
+      : monthBounds(selectedMonth)
 ​
     let query = supabase
       .from('members')
@@ -437,7 +449,7 @@ export default function Memberships() {
     const { data, error } = await query
     if (!error) setMembers(data || [])
     setLoading(false)
-  }, [filters, selectedMonth])
+  }, [filters, selectedMonth, rangeMode, customRange, isAdmin])
 ​
   useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
 ​
@@ -498,10 +510,44 @@ export default function Memberships() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-white">Memberships</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Showing records created in {formatYearMonth(selectedMonth)}</p>
+          <p className="text-slate-400 text-sm mt-0.5">
+            {isAdmin && rangeMode === 'custom'
+              ? `Showing records created ${customRange.start} → ${customRange.end}`
+              : `Showing records created in ${formatYearMonth(selectedMonth)}`}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
+        <div className="flex items-center gap-3 flex-wrap">
+          {isAdmin && (
+            <div className="flex gap-1 bg-navy-900 border border-navy-700 rounded-lg p-1">
+              <button
+                onClick={() => { setRangeMode('monthly'); setPage(1) }}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${rangeMode === 'monthly' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
+              >Monthly</button>
+              <button
+                onClick={() => { setRangeMode('custom'); setPage(1) }}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${rangeMode === 'custom' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}
+              >Custom Range</button>
+            </div>
+          )}
+          {isAdmin && rangeMode === 'custom' ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customRange.start}
+                onChange={e => { setCustomRange(r => ({ ...r, start: e.target.value })); setPage(1) }}
+                className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
+              />
+              <span className="text-slate-500">→</span>
+              <input
+                type="date"
+                value={customRange.end}
+                onChange={e => { setCustomRange(r => ({ ...r, end: e.target.value })); setPage(1) }}
+                className="bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
+              />
+            </div>
+          ) : (
+            <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
+          )}
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
             className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
@@ -511,7 +557,8 @@ export default function Memberships() {
         </div>
       </div>
 ​
-      {/* ── Monthly summary cards ── */}
+      {/* ── Monthly summary cards (admin only) ── */}
+      {isAdmin && (
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members This Month</p>
@@ -531,6 +578,7 @@ export default function Memberships() {
         </div>
        
       </div>
+      )}
 ​
       {/* ── Filters ── */}
       <div className="bg-navy-800 rounded-xl border border-navy-700 p-4 mb-6 space-y-4">
@@ -596,7 +644,7 @@ export default function Memberships() {
         </div>
       </div>
 ​
-      {/* ── Table ── */}
+      {/* ── Table ─�� */}
       <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
         <table className="w-full text-left">
           <thead className="bg-navy-900 border-b border-navy-700 text-slate-400 text-sm">
