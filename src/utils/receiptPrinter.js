@@ -9,6 +9,10 @@
 ​
 const RECEIPT_WIDTH = 32 // characters per line, standard for 58mm thermal paper
 ​
+// The QR code on every receipt links to this Instagram profile.
+// Hard-code your gym's Instagram URL here.
+const INSTAGRAM_URL = 'https://www.instagram.com/your_gym_handle'
+​
 function classMemberDisplayName(member) {
   const name = `${member.first_name || ''} ${member.last_name || ''}`.trim()
   return name || 'Walk-in Customer'
@@ -85,17 +89,11 @@ function buildReceiptText(member) {
 }
 ​
 /**
- * The text encoded inside the QR code. Scanning it shows the membership
- * details. Change the returned string if you'd rather encode something else
- * (e.g. a check-in URL like `https://your-gym.app/verify/${member.id}`).
+ * The data encoded inside the QR code. Scanning it opens the gym's Instagram
+ * profile. Edit INSTAGRAM_URL near the top of this file to change the link.
  */
-function buildQRData(member) {
-  const parts = ['J-GYM Membership', `Name: ${classMemberDisplayName(member)}`]
-  if (member.phone_number) parts.push(`Phone: ${member.phone_number}`)
-  parts.push(`Plan: ${capitalize(member.subscription_type)}`)
-  parts.push(`Valid: ${formatDate(member.start_date)} - ${formatDate(member.end_date)}`)
-  parts.push(`Paid: ${formatMoney(member.amount_paid)}`)
-  return parts.join('\n')
+function buildQRData() {
+  return INSTAGRAM_URL
 }
 ​
 // ─── Byte helpers ─────────────────────────────────────────────────────────────
@@ -168,8 +166,8 @@ function fallbackBrowserPrint(text) {
 }
 ​
 /**
- * Sends a receipt (with a QR code) to the RawBT app for printing on a paired
- * Bluetooth thermal printer. Accepts a member/class_member record.
+ * Sends a receipt (with a QR code linking to Instagram) to the RawBT app for
+ * printing on a paired Bluetooth thermal printer. Accepts a member/class_member record.
  */
 export function printReceiptViaRawBT(member) {
   const text = buildReceiptText(member)
@@ -181,15 +179,15 @@ export function printReceiptViaRawBT(member) {
     const enc = new TextEncoder()
     const payload = concatBytes([
       enc.encode(text + '\n'),
-      enc.encode(centerLine('Scan to verify membership') + '\n'),
-      escposQRCode(buildQRData(member)),
+      enc.encode(centerLine('Follow us on Instagram') + '\n'),
+      escposQRCode(buildQRData()),
       enc.encode('\n\n\n'), // feed paper before cut
     ])
     const encoded = bytesToBase64(payload)
     const url = `rawbt:base64,${encoded}`
     window.location.href = url
   } catch (err) {
-    console.error('RawBT Print failed, falling back to browser print dialog:', err)
+    console.error('RawBT print failed, falling back to browser print dialog:', err)
     fallbackBrowserPrint(text)
   }
 }
