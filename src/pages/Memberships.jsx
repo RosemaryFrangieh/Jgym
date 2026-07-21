@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
-import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Eye, RefreshCw, Calendar, Printer } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 ​
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -12,6 +12,22 @@ export function isMembershipExpired(endDate) {
   const todayStr = new Date().toISOString().split('T')[0]
   const endStr = new Date(endDate).toISOString().split('T')[0]
   return todayStr > endStr
+}
+​
+// Current lifecycle state of a membership: 'pending', 'active', or 'expired'.
+// Derived purely from the dates (no DB column needed):
+//  - 'pending' when the start date is still in the future (e.g. an early renewal
+//    made before the previous period expired). Flips to 'active' on the start day.
+//  - 'expired' once today passes the (computed) end date.
+//  - 'active' otherwise.
+export function getMembershipState(member) {
+  const todayStr = new Date().toISOString().split('T')[0]
+  if (member.start_date) {
+    const startStr = new Date(member.start_date).toISOString().split('T')[0]
+    if (todayStr < startStr) return 'pending'
+  }
+  if (isMembershipExpired(computeEndDate(member))) return 'expired'
+  return 'active'
 }
 ​
 export function computeEndDate(member) {
@@ -59,10 +75,15 @@ const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthl
 ​
 // ─── Badges ──────────────────────────────────────────────────────────────────
 ​
-function StatusBadge({ expired }) {
-  if (expired) return (
+function StatusBadge({ state }) {
+  if (state === 'expired') return (
     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border bg-red-500/20 text-red-400 border-red-500/30">
       <XCircle size={12} /> Expired
+    </span>
+  )
+  if (state === 'pending') return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+      <Clock size={12} /> Pending
     </span>
   )
   return (
@@ -106,7 +127,9 @@ function MembershipStatusBadge({ status }) {
 ​
 function DetailModal({ member, onClose, onRenew }) {
   const endDate = computeEndDate(member)
-  const expired = isMembershipExpired(endDate)
+  const state = getMembershipState(member)
+  const expired = state === 'expired'
+  const pending = state === 'pending'
   const fmt = (d) => d ? new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '—'
 ​
   return (
@@ -119,10 +142,10 @@ function DetailModal({ member, onClose, onRenew }) {
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
-        <div className={`rounded-lg p-3 mb-5 flex items-center gap-2 ${expired ? 'bg-red-900/30 border border-red-700/50' : 'bg-green-900/30 border border-green-700/50'}`}>
-          {expired ? <XCircle size={16} className="text-red-400" /> : <CheckCircle size={16} className="text-green-400" />}
-          <span className={`text-sm font-semibold ${expired ? 'text-red-400' : 'text-green-400'}`}>
-            {expired ? 'Membership Expired' : 'Membership Active'}
+        <div className={`rounded-lg p-3 mb-5 flex items-center gap-2 ${expired ? 'bg-red-900/30 border border-red-700/50' : pending ? 'bg-yellow-900/30 border border-yellow-700/50' : 'bg-green-900/30 border border-green-700/50'}`}>
+          {expired ? <XCircle size={16} className="text-red-400" /> : pending ? <Clock size={16} className="text-yellow-400" /> : <CheckCircle size={16} className="text-green-400" />}
+          <span className={`text-sm font-semibold ${expired ? 'text-red-400' : pending ? 'text-yellow-400' : 'text-green-400'}`}>
+            {expired ? 'Membership Expired' : pending ? `Membership Pending — starts ${fmt(member.start_date)}` : 'Membership Active'}
           </span>
         </div>
         <div className="space-y-3 mb-5">
@@ -427,6 +450,7 @@ export default function Memberships() {
   const enrichedMembers = members.map(m => ({
     ...m,
     _computedEndDate: computeEndDate(m),
+    _state: getMembershipState(m),
     get _expired() { return isMembershipExpired(this._computedEndDate) },
   }))
 ​
@@ -436,8 +460,7 @@ export default function Memberships() {
       const fullName = memberDisplayName(m).toLowerCase()
       if (!fullName.includes(q) && !(m.phone_number || '').includes(q)) return false
     }
-    if (filters.statusFilter === 'active'  &&  m._expired) return false
-    if (filters.statusFilter === 'expired' && !m._expired) return false
+    if (filters.statusFilter !== 'all' && m._state !== filters.statusFilter) return false
     if (filters.membershipStatus !== 'all' && (m.membership_status ?? 'new') !== filters.membershipStatus) return false
     return true
   })
@@ -465,8 +488,9 @@ export default function Memberships() {
   }
 ​
   // Monthly totals summary
-  const activeCount     = filteredMembers.filter(m => !m._expired).length
-  const expiredCount    = filteredMembers.filter(m =>  m._expired).length
+  const activeCount     = filteredMembers.filter(m => m._state === 'active').length
+  const pendingCount    = filteredMembers.filter(m => m._state === 'pending').length
+  const expiredCount    = filteredMembers.filter(m => m._state === 'expired').length
 ​
   return (
     <div>
@@ -501,6 +525,10 @@ export default function Memberships() {
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Expired</p>
           <p className="text-2xl font-bold text-red-400">{loading ? '—' : expiredCount}</p>
         </div>
+        <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
+          <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Pending</p>
+          <p className="text-2xl font-bold text-yellow-400">{loading ? '—' : pendingCount}</p>
+        </div>
        
       </div>
 ​
@@ -518,12 +546,13 @@ export default function Memberships() {
             />
           </div>
           <div className="flex items-center gap-2">
-            {['all', 'active', 'expired'].map(s => (
+            {['all', 'active', 'pending', 'expired'].map(s => (
               <button key={s} onClick={() => handleFilterChange('statusFilter', s)}
                 className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
                   filters.statusFilter === s
                     ? s === 'expired' ? 'bg-red-500/20 text-red-400 border border-red-500/40'
                       : s === 'active' ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                      : s === 'pending' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40'
                       : 'bg-electric-blue text-white'
                     : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
                 }`}
@@ -595,7 +624,7 @@ export default function Memberships() {
               </tr>
             ) : (
               paginated.map(m => (
-                <tr key={m.id} className={`border-b border-navy-700 transition-colors ${m._expired ? 'bg-red-950/20 hover:bg-red-950/30' : 'hover:bg-navy-900/50'}`}>
+                <tr key={m.id} className={`border-b border-navy-700 transition-colors ${m._state === 'expired' ? 'bg-red-950/20 hover:bg-red-950/30' : m._state === 'pending' ? 'bg-yellow-950/20 hover:bg-yellow-950/30' : 'hover:bg-navy-900/50'}`}>
                   <td className="p-4">
                     <p className="text-white font-medium">{memberDisplayName(m)}</p>
                     <p className="text-slate-500 text-xs mt-0.5">{new Date(m.created_at).toLocaleDateString()}</p>
@@ -610,7 +639,7 @@ export default function Memberships() {
                   </td>
                   <td className="p-4">
                     <div className="flex flex-col gap-1 items-start">
-                      <StatusBadge expired={m._expired} />
+                      <StatusBadge state={m._state} />
                       <div className="flex items-center gap-1">
                         <MembershipStatusBadge status={m.membership_status} />
                         {(m.renewal_count || 0) > 0 && (
