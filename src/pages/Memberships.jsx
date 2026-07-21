@@ -34,7 +34,7 @@ export function getMembershipState(member) {
 export function computeEndDate(member) {
   if (!member.start_date) return member.end_date || null
   if (member.subscription_type === 'custom') return member.end_date || null
-  const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
+  const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 32, family: 32 }
   const days = durationMap[member.subscription_type] ?? 0
   if (days === 0) return member.end_date || null
   const start = new Date(member.start_date)
@@ -70,9 +70,9 @@ function monthBounds(ym) {
 // ─── Constants ────────────────────────────────────────────────────────────────
 ​
 const PAGE_SIZE = 10
-const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'custom']
+const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'family', 'custom']
 const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all', membershipStatus: 'all' }
-const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40 }
+const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40, family: 100 }
 ​
 // ─── Badges ──────────────────────────────────────────────────────────────────
 ​
@@ -101,9 +101,10 @@ function SubscriptionBadge({ type }) {
     biweekly:  'bg-purple-500/20 text-purple-400 border-purple-500/30',
     triweekly: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
     monthly:   'bg-green-500/20 text-green-400 border-green-500/30',
+    family:    'bg-teal-500/20 text-teal-400 border-teal-500/30',
     custom:    'bg-pink-500/20 text-pink-400 border-pink-500/30',
   }
-  const labels = { biweekly: '2 Weeks', triweekly: '3 Weeks' }
+  const labels = { biweekly: '2 Weeks', triweekly: '3 Weeks', family: 'Family' }
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium border capitalize ${colors[type] ?? 'bg-slate-500/20 text-slate-400 border-slate-500/30'}`}>
       {labels[type] ?? type}
@@ -259,7 +260,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     if (isCustom) {
       endDateStr = customEndDate
     } else {
-      const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 30 }
+      const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 32, family: 32 }
       const start = new Date(startDate)
       start.setDate(start.getDate() + durationMap[subscriptionType])
       endDateStr = start.toISOString().split('T')[0]
@@ -324,6 +325,7 @@ function RenewModal({ member, onClose, onSuccess }) {
               <option value="biweekly">2 Weeks — ${FIXED_PRICES.biweekly}</option>
               <option value="triweekly">3 Weeks — ${FIXED_PRICES.triweekly}</option>
               <option value="monthly">Monthly — ${FIXED_PRICES.monthly}</option>
+              <option value="family">Family Monthly — ${FIXED_PRICES.family}</option>
               <option value="custom">Custom</option>
             </select>
           </div>
@@ -632,6 +634,16 @@ export default function Memberships() {
           ))}
         </div>
 ​
+        <div className="flex items-center justify-between pt-1 border-t border-navy-700">
+          <span className="text-slate-400 text-sm">
+            {loading ? 'Loading…' : <><span className="text-white font-semibold">{filteredMembers.length}</span> member{filteredMembers.length !== 1 ? 's' : ''} found</>}
+          </span>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors">
+              <X size={14} /> Clear filters
+            </button>
+          )}
+        </div>
       </div>
 ​
       {/* ── Table ─�� */}

@@ -1,17 +1,41 @@
 // membermodel.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { X, Printer, Check } from 'lucide-react'
+import { X, Printer, Check, Plus } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
-
+​
 const FIXED_PRICES = {
   daily: 7,
   weekly: 17,
   biweekly: 25,
   triweekly: 32,
-  monthly: 40
+  monthly: 40,
+  family: 100
 }
-
+​
+// Family plans store their 3 member names + phone numbers inside the description
+// field, structured so we can parse them back when editing.
+const FAMILY_MARKER = 'Family plan'
+function buildFamilyDescription(names, phones, notes) {
+  const lines = [FAMILY_MARKER]
+  if (names.length) lines.push(`Members: ${names.join(', ')}`)
+  if (phones.length) lines.push(`Phones: ${phones.join(', ')}`)
+  const extra = (notes || '').trim()
+  if (extra && !extra.startsWith(FAMILY_MARKER)) lines.push('', extra)
+  return lines.join('\n')
+}
+function parseFamilyDescription(description) {
+  const result = { names: [], phones: [] }
+  if (!description) return result
+  for (const line of description.split('\n')) {
+    const m = line.match(/^Members:\s*(.*)$/i)
+    const p = line.match(/^Phones:\s*(.*)$/i)
+    if (m) result.names = m[1].split(',').map(s => s.trim()).filter(Boolean)
+    if (p) result.phones = p[1].split(',').map(s => s.trim()).filter(Boolean)
+  }
+  return result
+}
+​
 export default function MemberModal({ member, onClose }) {
   const [fullName, setFullName] = useState('')
   const [formData, setFormData] = useState({
@@ -26,7 +50,10 @@ export default function MemberModal({ member, onClose }) {
   const [savedMember, setSavedMember] = useState(null) // set after a successful save, shows the receipt screen
   const isCustom = formData.subscription_type === 'custom'
   const isDaily  = formData.subscription_type === 'daily'
-
+  const isFamily = formData.subscription_type === 'family'
+  const [familyNames, setFamilyNames]   = useState(['', '', ''])
+  const [familyPhones, setFamilyPhones] = useState([''])
+​
   useEffect(() => {
     if (member) {
       setFullName(`${member.first_name || ''} ${member.last_name || ''}`.trim())
@@ -35,18 +62,24 @@ export default function MemberModal({ member, onClose }) {
         start_date: member.start_date.split('T')[0],
         end_date: member.end_date ? member.end_date.split('T')[0] : ''
       })
+      if (member.subscription_type === 'family') {
+        const parsed = parseFamilyDescription(member.description)
+        const primary = `${member.first_name || ''} ${member.last_name || ''}`.trim()
+        setFamilyNames([parsed.names[0] || primary, parsed.names[1] || '', parsed.names[2] || ''])
+        setFamilyPhones(parsed.phones.length ? parsed.phones : [member.phone_number || ''])
+      }
     }
   }, [member])
-
+​
   useEffect(() => {
     calculateAmount()
   }, [formData.base_price, formData.discount_type, formData.discount_value])
-
+​
   const calculateAmount = () => {
     const base = parseFloat(formData.base_price) || 0
     const discVal = parseFloat(formData.discount_value) || 0
     let finalAmount = base
-
+​
     if (formData.discount_type === 'percentage') {
       finalAmount = base - (base * (discVal / 100))
     } else if (formData.discount_type === 'fixed') {
@@ -54,7 +87,7 @@ export default function MemberModal({ member, onClose }) {
     }
     setAmountPaid(finalAmount < 0 ? 0 : finalAmount)
   }
-
+​
   const handleFullNameChange = (e) => {
     const value = e.target.value
     setFullName(value)
@@ -63,65 +96,82 @@ export default function MemberModal({ member, onClose }) {
     const last_name = parts.slice(1).join(' ')
     setFormData(f => ({ ...f, first_name, last_name }))
   }
-
+​
   const handleChange = (e) => {
     const { name, value } = e.target
     const updated = { ...formData, [name]: value }
-
+​
     if (name === 'subscription_type' && value !== 'custom') {
       updated.base_price = FIXED_PRICES[value]
     }
-
+​
     setFormData(updated)
   }
-
+​
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
-
+​
     let endDateObj
-
+​
     if (isCustom) {
       endDateObj = new Date(formData.end_date)
     } else {
-      const duration = formData.subscription_type === 'daily' ? 0 : formData.subscription_type === 'weekly' ? 7 : formData.subscription_type === 'biweekly' ? 14 : formData.subscription_type === 'triweekly' ? 21 : formData.subscription_type === 'monthly' ? 32 : 30
+      const duration = formData.subscription_type === 'daily' ? 1 : formData.subscription_type === 'weekly' ? 7 : formData.subscription_type === 'biweekly' ? 14 : formData.subscription_type === 'triweekly' ? 21 : 32
       const startDateObj = new Date(formData.start_date)
       endDateObj = new Date(startDateObj)
       endDateObj.setDate(endDateObj.getDate() + duration)
     }
-
+​
+    let firstName = formData.first_name
+    let lastName = formData.last_name
+    let phone = formData.phone_number
+    let description = formData.description
+    let basePrice = parseFloat(formData.base_price)
+​
+    if (isFamily) {
+      const names = familyNames.map(n => n.trim()).filter(Boolean)
+      const phones = familyPhones.map(p => p.trim()).filter(Boolean)
+      const primaryParts = (names[0] || '').split(/\s+/).filter(Boolean)
+      firstName = primaryParts[0] || ''
+      lastName = primaryParts.slice(1).join(' ')
+      phone = phones[0] || ''
+      basePrice = FIXED_PRICES.family
+      description = buildFamilyDescription(names, phones, formData.description)
+    }
+​
     const payload = {
-      first_name: formData.first_name,
-      last_name: formData.last_name,
-      phone_number: formData.phone_number,
+      first_name: firstName,
+      last_name: lastName,
+      phone_number: phone,
       subscription_type: formData.subscription_type,
-      description: formData.description,
-      base_price: parseFloat(formData.base_price),
+      description: description,
+      base_price: basePrice,
       discount_type: formData.discount_type,
       discount_value: parseFloat(formData.discount_value),
       amount_paid: amountPaid,
       start_date: formData.start_date,
       end_date: endDateObj.toISOString().split('T')[0]
     }
-
+​
     let result
     if (member) {
       result = await supabase.from('members').update(payload).eq('id', member.id)
     } else {
       result = await supabase.from('members').insert([payload])
     }
-
+​
     setLoading(false)
-
+​
     if (result.error) {
       setError(result.error.message)
       return
     }
-
+​
     setSavedMember(payload)
   }
-
+​
   if (savedMember) {
     return (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
@@ -135,7 +185,7 @@ export default function MemberModal({ member, onClose }) {
               {savedMember.first_name} {savedMember.last_name} — ${Number(savedMember.amount_paid).toFixed(2)} paid
             </p>
           </div>
-
+​
           <button
             onClick={() => printReceiptViaRawBT(savedMember)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 mb-3"
@@ -145,7 +195,7 @@ export default function MemberModal({ member, onClose }) {
           <p className="text-xs text-slate-500 text-center mb-4">
             Sends the receipt to RawBT, which relays it to your paired Bluetooth printer.
           </p>
-
+​
           <button
             onClick={onClose}
             className="w-full px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg"
@@ -156,7 +206,7 @@ export default function MemberModal({ member, onClose }) {
       </div>
     )
   }
-
+​
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-navy-700 max-h-[90vh] overflow-y-auto">
@@ -164,36 +214,85 @@ export default function MemberModal({ member, onClose }) {
           <h3 className="text-xl font-bold text-white">{member ? 'Edit Member' : 'Add New Member'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
-
+​
         {error && (
           <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
             {error}
           </div>
         )}
-
+​
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              Full Name {isDaily && <span className="text-slate-600">(optional for daily)</span>}
-            </label>
-            <input
-              type="text"
-              name="full_name"
-              value={fullName}
-              onChange={handleFullNameChange}
-              required={!isDaily}
-              placeholder="e.g. John Smith"
-              className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
-            />
-          </div>
-
-          <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Phone Number {isDaily && <span className="text-slate-600">(optional for daily)</span>}
-              </label>
-              <input type="text" name="phone_number" value={formData.phone_number} onChange={handleChange} required={!isDaily} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+          {!isFamily && (
+            <>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">
+                  Full Name {isDaily && <span className="text-slate-600">(optional for daily)</span>}
+                </label>
+                <input
+                  type="text"
+                  name="full_name"
+                  value={fullName}
+                  onChange={handleFullNameChange}
+                  required={!isDaily}
+                  placeholder="e.g. John Smith"
+                  className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+                />
+              </div>
+​
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">
+                  Phone Number {isDaily && <span className="text-slate-600">(optional for daily)</span>}
+                </label>
+                <input type="text" name="phone_number" value={formData.phone_number} onChange={handleChange} required={!isDaily} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+              </div>
+            </>
+          )}
+​
+          {isFamily && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Family Members <span className="text-slate-600">(3 names)</span></label>
+                <div className="space-y-2">
+                  {[0, 1, 2].map(i => (
+                    <input
+                      key={i}
+                      type="text"
+                      value={familyNames[i]}
+                      onChange={e => setFamilyNames(n => n.map((v, idx) => (idx === i ? e.target.value : v)))}
+                      required={i === 0}
+                      placeholder={`Member ${i + 1} full name${i === 0 ? '' : ' (optional)'}`}
+                      className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Phone Numbers <span className="text-slate-600">(optional)</span></label>
+                <div className="space-y-2">
+                  {familyPhones.map((phone, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="tel"
+                        value={phone}
+                        onChange={e => setFamilyPhones(p => p.map((v, idx) => (idx === i ? e.target.value : v)))}
+                        placeholder="e.g. +961 70 123 456"
+                        className="flex-1 bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+                      />
+                      {familyPhones.length > 1 && (
+                        <button type="button" onClick={() => setFamilyPhones(p => p.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-red-400" title="Remove">
+                          <X size={18} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setFamilyPhones(p => [...p, ''])} className="mt-2 flex items-center gap-1 text-sm text-electric-blue hover:opacity-80">
+                  <Plus size={16} /> Add phone number
+                </button>
+              </div>
             </div>
-
+          )}
+​
           <div>
             <label className="block text-sm text-slate-400 mb-1">Subscription Type</label>
             <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
@@ -202,10 +301,11 @@ export default function MemberModal({ member, onClose }) {
               <option value="biweekly">2 Weeks - ${FIXED_PRICES.biweekly}</option>
               <option value="triweekly">3 Weeks - ${FIXED_PRICES.triweekly}</option>
               <option value="monthly">Monthly - ${FIXED_PRICES.monthly}</option>
+              <option value="family">Family Monthly - ${FIXED_PRICES.family}</option>
               <option value="custom">Custom</option>
             </select>
           </div>
-
+​
           {isCustom ? (
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -227,7 +327,7 @@ export default function MemberModal({ member, onClose }) {
               <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
             </div>
           )}
-
+​
           {!isCustom && (
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -248,7 +348,7 @@ export default function MemberModal({ member, onClose }) {
               </div>
             </div>
           )}
-
+​
           {isCustom && (
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -265,17 +365,17 @@ export default function MemberModal({ member, onClose }) {
               </div>
             </div>
           )}
-
+​
           <div>
             <label className="block text-sm text-slate-400 mb-1">Description <span className="text-slate-600">(optional)</span></label>
             <textarea name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="Any notes about this membership..." className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white resize-none placeholder:text-slate-600" />
           </div>
-
+​
           <div className="bg-navy-900 p-4 rounded-lg flex justify-between items-center">
             <span className="text-slate-400">Final Amount Paid:</span>
             <span className="text-2xl font-bold text-electric-green">${amountPaid.toFixed(2)}</span>
           </div>
-
+​
           <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white">Cancel</button>
             <button type="submit" disabled={loading} className="px-6 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50">
