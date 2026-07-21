@@ -189,7 +189,7 @@ export function printReceiptViaRawBT(member) {
     const url = `rawbt:base64,${encoded}`
     window.location.href = url
   } catch (err) {
-    console.error('RawBT print failed, falling back to browser print dialog:', err)
+    console.error('RawBT Print failed, falling back to browser print dialog:', err)
     fallbackBrowserPrint(text)
   }
 }
