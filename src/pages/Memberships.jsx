@@ -634,16 +634,7 @@ export default function Memberships() {
           ))}
         </div>
 ​
-        <div className="flex items-center justify-between pt-1 border-t border-navy-700">
-          <span className="text-slate-400 text-sm">
-            {loading ? 'Loading…' : <><span className="text-white font-semibold">{filteredMembers.length}</span> member{filteredMembers.length !== 1 ? 's' : ''} found</>}
-          </span>
-          {hasActiveFilters && (
-            <button onClick={clearFilters} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors">
-              <X size={14} /> Clear filters
-            </button>
-          )}
-        </div>
+     
       </div>
 ​
       {/* ── Table ─�� */}
