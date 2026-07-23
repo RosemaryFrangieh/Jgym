@@ -244,6 +244,8 @@ export default function Dashboard() {
                     <p className={`text-xs font-medium ${getDaysColor(daysLeft)}`}>{getDaysLabel(daysLeft)}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3 shrink-0">
+                    {/* WhatsApp button temporarily hidden - functionality kept in sendWhatsApp(). Change false -> true to restore. */}
+                    {false && (
                     <button
                       onClick={() => sendWhatsApp(m)}
                       title={sent ? 'Reminder sent — click to send again' : 'Send WhatsApp reminder'}
@@ -252,6 +254,7 @@ export default function Dashboard() {
                       {sent ? <Check size={14} /> : <MessageCircle size={14} />}
                       <span className="hidden sm:inline">{sent ? 'Sent' : 'WhatsApp'}</span>
                     </button>
+                    )}
                     <button onClick={() => handleRenew(m)} className="flex items-center gap-1.5 px-3 py-1.5 bg-electric-blue/10 text-electric-blue rounded-lg text-sm font-medium hover:bg-electric-blue/20 transition-colors">
                       <RefreshCw size={14} /><span className="hidden sm:inline">Renew</span>
                     </button>
