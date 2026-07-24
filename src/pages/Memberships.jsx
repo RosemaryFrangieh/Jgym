@@ -457,38 +457,20 @@ function SmsModal({ members, onClose }) {
       return
     }
 
-    setLoading(true)
-    setFeedback(null)
-
-    try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-      const response = await fetch(`${supabaseUrl}/functions/v1/send-bulk-sms`, {
-        method: 'POST',
-        headers: {
-          // Using text/plain bypasses the CORS preflight check completely!
-          'Content-Type': 'text/plain',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          recipients: selectedRecipients.map(r => r.formatted),
-          message: message
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send SMS')
-      }
-
-      setFeedback({ type: 'success', text: `Successfully queued ${selectedRecipients.length} SMS messages.` })
-      setMessage('')
-      setSelectedIds(new Set()) // Clear selection
-    } catch (err) {
-      setFeedback({ type: 'error', text: err.message || 'Failed to send SMS.' })
-    } finally {
-      setLoading(false)
-    }
+    // Get all selected numbers separated by commas
+    const numbers = selectedRecipients.map(r => r.formatted).join(',');
+    
+    // Encode the message so it works in a URL
+    const encodedMessage = encodeURIComponent(message);
+    
+    // Create the SMS deep link
+    const smsLink = `sms:${numbers}?body=${encodedMessage}`;
+    
+    // Open the phone's native SMS app
+    window.location.href = smsLink;
+    
+    // Show a success message in the popup
+    setFeedback({ type: 'success', text: `Opening your messaging app with ${selectedRecipients.length} recipients...` })
   }
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
