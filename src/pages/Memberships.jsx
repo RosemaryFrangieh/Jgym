@@ -385,13 +385,19 @@ function RenewModal({ member, onClose, onSuccess }) {
 
 // ─── SMS Modal ────────────────────────────────────────────────────────────────
 
+// ─── SMS Modal ────────────────────────────────────────────────────────────────
+
 function SmsModal({ members, onClose }) {
   const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedIds, setSelectedIds] = useState(new Set())
+  
+  // Chunking State
+  const [chunks, setChunks] = useState([])
+  const [sentChunks, setSentChunks] = useState(new Set())
+  const [isProcessing, setIsProcessing] = useState(false)
 
   // Process numbers based on rules and compute state
   const processedMembers = useMemo(() => {
@@ -410,11 +416,9 @@ function SmsModal({ members, onClose }) {
   const filteredModalMembers = processedMembers.filter(m => {
     if (!m.formatted) return false // Only show valid numbers in the list
     
-    // Filter by search
     const q = search.toLowerCase()
     if (q && !m.name.toLowerCase().includes(q) && !(m.raw || '').includes(q)) return false
     
-    // Filter by status
     if (statusFilter !== 'all' && m.state !== statusFilter) return false
     
     return true
@@ -432,12 +436,10 @@ function SmsModal({ members, onClose }) {
 
   const toggleSelectAll = () => {
     if (filteredModalMembers.every(m => selectedIds.has(m.id))) {
-      // Deselect all visible
       const newSelection = new Set(selectedIds)
       filteredModalMembers.forEach(m => newSelection.delete(m.id))
       setSelectedIds(newSelection)
     } else {
-      // Select all visible
       const newSelection = new Set(selectedIds)
       filteredModalMembers.forEach(m => newSelection.add(m.id))
       setSelectedIds(newSelection)
@@ -447,7 +449,7 @@ function SmsModal({ members, onClose }) {
   const selectedRecipients = processedMembers.filter(m => selectedIds.has(m.id) && m.formatted)
   const allVisibleSelected = filteredModalMembers.length > 0 && filteredModalMembers.every(m => selectedIds.has(m.id))
 
-  const handleSend = async () => {
+  const startSendingProcess = () => {
     if (!message.trim()) {
       setFeedback({ type: 'error', text: 'Message cannot be empty.' })
       return
@@ -457,131 +459,221 @@ function SmsModal({ members, onClose }) {
       return
     }
 
-    // Get all selected numbers separated by commas
-    const numbers = selectedRecipients.map(r => r.formatted).join(',');
+    // Divide into chunks of 20
+    const chunkSize = 20
+    const newChunks = []
+    for (let i = 0; i < selectedRecipients.length; i += chunkSize) {
+      newChunks.push(selectedRecipients.slice(i, i + chunkSize))
+    }
     
-    // Encode the message so it works in a URL
-    const encodedMessage = encodeURIComponent(message);
-    
-    // Create the SMS deep link
-    const smsLink = `sms:${numbers}?body=${encodedMessage}`;
-    
-    // Open the phone's native SMS app
-    window.location.href = smsLink;
-    
-    // Show a success message in the popup
-    setFeedback({ type: 'success', text: `Opening your messaging app with ${selectedRecipients.length} recipients...` })
+    setChunks(newChunks)
+    setSentChunks(new Set())
+    setIsProcessing(true)
+    setFeedback({ type: 'info', text: `Divided into ${newChunks.length} groups. Start with Group 1!` })
   }
+
+  const openChunk = (index) => {
+    const numbers = chunks[index].map(r => r.formatted).join(',')
+    const encodedMessage = encodeURIComponent(message)
+    const smsLink = `sms:${numbers}?body=${encodedMessage}`
+    
+    // Open native SMS app
+    const link = document.createElement('a')
+    link.href = smsLink
+    link.click()
+    
+    setFeedback({ type: 'info', text: `Opened Group ${index + 1}. Send it from your messaging app, then mark it as sent.` })
+  }
+
+  const markChunkAsSent = (index) => {
+    const newSentChunks = new Set(sentChunks)
+    newSentChunks.add(index)
+    setSentChunks(newSentChunks)
+    
+    if (index + 1 < chunks.length) {
+      setFeedback({ type: 'success', text: `Group ${index + 1} sent! Ready for Group ${index + 2}.` })
+    } else {
+      setFeedback({ type: 'success', text: `All ${selectedRecipients.length} messages have been processed!` })
+    }
+  }
+
+  const resetProcess = () => {
+    setIsProcessing(false)
+    setChunks([])
+    setSentChunks(new Set())
+    setMessage('')
+    setSelectedIds(new Set())
+    setFeedback(null)
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-2xl p-6 border border-navy-700 max-h-[90vh] flex flex-col">
         <div className="flex justify-between items-center mb-5">
           <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2"><MessageSquare size={20} /> Send Bulk SMS</h3>
-            <p className="text-slate-400 text-sm mt-0.5">Select members and type your message.</p>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <MessageSquare size={20} /> {isProcessing ? 'Sending Process' : 'Send Bulk SMS'}
+            </h3>
+            <p className="text-slate-400 text-sm mt-0.5">
+              {isProcessing ? `Processing ${selectedRecipients.length} members in groups of 20.` : 'Select members and type your message.'}
+            </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
 
-        {/* Selection Summary & Select All */}
-        <div className="bg-navy-900 border border-navy-700 rounded-lg p-3 mb-4 text-sm flex justify-between items-center">
-          <div className="flex flex-col">
-            <span className="text-slate-400 text-xs uppercase tracking-wide">Total Selected</span>
-            <span className="text-green-400 font-bold text-lg">{selectedRecipients.length} Members</span>
-          </div>
-          <button 
-            onClick={toggleSelectAll} 
-            className="px-3 py-1.5 bg-navy-700 text-white rounded-md text-sm hover:bg-navy-600 transition-colors"
-          >
-            {allVisibleSelected ? 'Deselect Visible' : 'Select All Visible'}
-          </button>
-        </div>
-
         {feedback && (
-          <div className={`mb-4 p-3 rounded-lg text-sm ${feedback.type === 'error' ? 'bg-red-900/50 border border-red-700 text-red-300' : 'bg-green-900/50 border border-green-700 text-green-300'}`}>
+          <div className={`mb-4 p-3 rounded-lg text-sm ${
+            feedback.type === 'error' ? 'bg-red-900/50 border border-red-700 text-red-300' : 
+            feedback.type === 'success' ? 'bg-green-900/50 border border-green-700 text-green-300' : 
+            'bg-blue-900/50 border border-blue-700 text-blue-300'
+          }`}>
             {feedback.text}
           </div>
         )}
 
-        {/* Filters & Search */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-            <input
-              type="text"
-              placeholder="Search name or phone..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
-            />
-          </div>
-          <div className="flex items-center gap-1 bg-navy-900 border border-navy-700 rounded-lg p-1">
-            {['all', 'active', 'pending', 'expired'].map(s => (
-              <button 
-                key={s} 
-                onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
-                  statusFilter === s ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >{s}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Recipients List */}
-        <div className="flex-1 overflow-y-auto bg-navy-900 border border-navy-700 rounded-lg p-2 mb-4 min-h-[150px] max-h-[300px]">
-          {filteredModalMembers.length === 0 ? (
-            <div className="text-center text-slate-500 py-4 text-sm">No valid members found for your filters.</div>
-          ) : (
-            filteredModalMembers.map(m => (
-              <div 
-                key={m.id} 
-                className={`flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-navy-800 transition-colors ${selectedIds.has(m.id) ? 'bg-navy-800' : ''}`}
-                onClick={() => toggleSelection(m.id)}
-              >
-                <div className="flex items-center gap-3">
-                  <input 
-                    type="checkbox" 
-                    checked={selectedIds.has(m.id)} 
-                    onChange={() => toggleSelection(m.id)} 
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-4 h-4 accent-electric-blue cursor-pointer"
-                  />
-                  <div>
-                    <p className="text-white text-sm font-medium">{m.name}</p>
-                    <p className="text-slate-500 text-xs">{m.formatted}</p>
+        {/* SEND PROCESS VIEW */}
+        {isProcessing ? (
+          <div className="flex-1 overflow-y-auto">
+            <div className="space-y-3">
+              {chunks.map((chunk, index) => {
+                const isSent = sentChunks.has(index)
+                return (
+                  <div key={index} className={`p-4 rounded-lg border ${isSent ? 'bg-green-900/20 border-green-700/50' : 'bg-navy-900 border-navy-700'}`}>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-white font-medium">Group {index + 1}</span>
+                      <span className="text-slate-400 text-sm">{chunk.length} members</span>
+                    </div>
+                    
+                    {!isSent ? (
+                      <div className="flex gap-2 mt-2">
+                        <button 
+                          onClick={() => openChunk(index)}
+                          className="flex-1 px-3 py-2 bg-electric-blue text-white rounded-lg text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2"
+                        >
+                          <Send size={14} /> Open in SMS App
+                        </button>
+                        <button 
+                          onClick={() => markChunkAsSent(index)}
+                          className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle size={14} /> Mark as Sent
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-green-400 text-sm font-semibold mt-2">
+                        <CheckCircle size={16} /> Successfully Sent
+                      </div>
+                    )}
                   </div>
-                </div>
-                <StatusBadge state={m.state} />
+                )
+              })}
+            </div>
+            
+            <button 
+              onClick={resetProcess}
+              className="w-full mt-5 px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg text-sm font-medium hover:border-slate-500 transition-colors"
+            >
+              Clear and Start Over
+            </button>
+          </div>
+        ) : (
+          /* SELECTION VIEW (Normal Modal) */
+          <>
+            {/* Selection Summary & Select All */}
+            <div className="bg-navy-900 border border-navy-700 rounded-lg p-3 mb-4 text-sm flex justify-between items-center">
+              <div className="flex flex-col">
+                <span className="text-slate-400 text-xs uppercase tracking-wide">Total Selected</span>
+                <span className="text-green-400 font-bold text-lg">{selectedRecipients.length} Members</span>
               </div>
-            ))
-          )}
-        </div>
+              <button 
+                onClick={toggleSelectAll} 
+                className="px-3 py-1.5 bg-navy-700 text-white rounded-md text-sm hover:bg-navy-600 transition-colors"
+              >
+                {allVisibleSelected ? 'Deselect Visible' : 'Select All Visible'}
+              </button>
+            </div>
 
-        {/* Message Textarea */}
-        <div className="mb-4">
-          <label className="block text-sm text-slate-400 mb-1">Message</label>
-          <textarea 
-            value={message} 
-            onChange={e => setMessage(e.target.value)} 
-            rows={4}
-            placeholder="Type your message here..."
-            className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-electric-blue"
-          />
-          <p className="text-xs text-slate-500 mt-1">{message.length} characters</p>
-        </div>
+            {/* Filters & Search */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search name or phone..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-navy-900 border border-navy-700 rounded-lg p-1">
+                {['all', 'active', 'pending', 'expired'].map(s => (
+                  <button 
+                    key={s} 
+                    onClick={() => setStatusFilter(s)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
+                      statusFilter === s ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >{s}</button>
+                ))}
+              </div>
+            </div>
 
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-3 mt-auto">
-          <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
-          <button 
-            onClick={handleSend} 
-            disabled={loading || selectedRecipients.length === 0} 
-            className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm"
-          >
-            <Send size={15} /> {loading ? 'Sending...' : `Send to ${selectedRecipients.length} Members`}
-          </button>
-        </div>
+            {/* Recipients List */}
+            <div className="flex-1 overflow-y-auto bg-navy-900 border border-navy-700 rounded-lg p-2 mb-4 min-h-[150px] max-h-[300px]">
+              {filteredModalMembers.length === 0 ? (
+                <div className="text-center text-slate-500 py-4 text-sm">No valid members found for your filters.</div>
+              ) : (
+                filteredModalMembers.map(m => (
+                  <div 
+                    key={m.id} 
+                    className={`flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-navy-800 transition-colors ${selectedIds.has(m.id) ? 'bg-navy-800' : ''}`}
+                    onClick={() => toggleSelection(m.id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedIds.has(m.id)} 
+                        onChange={() => toggleSelection(m.id)} 
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 accent-electric-blue cursor-pointer"
+                      />
+                      <div>
+                        <p className="text-white text-sm font-medium">{m.name}</p>
+                        <p className="text-slate-500 text-xs">{m.formatted}</p>
+                      </div>
+                    </div>
+                    <StatusBadge state={m.state} />
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Message Textarea */}
+            <div className="mb-4">
+              <label className="block text-sm text-slate-400 mb-1">Message</label>
+              <textarea 
+                value={message} 
+                onChange={e => setMessage(e.target.value)} 
+                rows={4}
+                placeholder="Type your message here..."
+                className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-electric-blue"
+              />
+              <p className="text-xs text-slate-500 mt-1">{message.length} characters</p>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex justify-end gap-3 mt-auto">
+              <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
+              <button 
+                onClick={startSendingProcess} 
+                disabled={selectedRecipients.length === 0} 
+                className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm"
+              >
+                <Send size={15} /> Start Sending Process
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
