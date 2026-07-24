@@ -5,16 +5,16 @@ import MemberModal from '../components/MemberModal'
 import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer, MessageSquare } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 import { useAuth } from '../context/AuthContext'
- 
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
- 
+
 export function isMembershipExpired(endDate) {
   if (!endDate) return false
   const todayStr = new Date().toISOString().split('T')[0]
   const endStr = new Date(endDate).toISOString().split('T')[0]
   return todayStr > endStr
 }
- 
+
 // Current lifecycle state of a membership: 'pending', 'active', or 'expired'.
 // Derived purely from the dates (no DB column needed):
 //  - 'pending' when the start date is still in the future (e.g. an early renewal
@@ -30,7 +30,7 @@ export function getMembershipState(member) {
   if (isMembershipExpired(computeEndDate(member))) return 'expired'
   return 'active'
 }
- 
+
 export function computeEndDate(member) {
   if (!member.start_date) return member.end_date || null
   if (member.subscription_type === 'custom') return member.end_date || null
@@ -41,7 +41,7 @@ export function computeEndDate(member) {
   start.setDate(start.getDate() + days)
   return start.toISOString().split('T')[0]
 }
- 
+
 export function memberDisplayName(m) {
   const name = `${m.first_name || ''} ${m.last_name || ''}`.trim()
   return name || 'Walk-in Customer'
@@ -49,13 +49,13 @@ export function memberDisplayName(m) {
 function toYearMonth(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
- 
+
 // Returns a display label like "June 2026"
 function formatYearMonth(ym) {
   const [y, m] = ym.split('-')
   return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
- 
+
 // Returns first and last ISO date strings of a given 'YYYY-MM'
 function monthBounds(ym) {
   const [y, m] = ym.split('-').map(Number)
@@ -66,21 +66,21 @@ function monthBounds(ym) {
     to:   last.toISOString().split('T')[0],
   }
 }
- 
+
 // ─── Constants ────────────────────────────────────────────────────────────────
- 
+
 const PAGE_SIZE = 10
 const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'family', 'custom']
 const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all', membershipStatus: 'all' }
 const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40, family: 100 }
- 
+
 // Relative path — this is a Vercel Serverless Function that ships automatically
 // with your app (lives in /api/send-bulk-sms.js at the project root). No separate
 // deploy or external URL needed since it's served from the same domain.
 const SEND_BULK_SMS_URL = '/api/send-bulk-sms'
- 
+
 // ─── Badges ──────────────────────────────────────────────────────────────────
- 
+
 function StatusBadge({ state }) {
   if (state === 'expired') return (
     <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold border bg-red-500/20 text-red-400 border-red-500/30">
@@ -98,7 +98,7 @@ function StatusBadge({ state }) {
     </span>
   )
 }
- 
+
 function SubscriptionBadge({ type }) {
   const colors = {
     daily:     'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -116,7 +116,7 @@ function SubscriptionBadge({ type }) {
     </span>
   )
 }
- 
+
 function MembershipStatusBadge({ status }) {
   const isNew = status !== 'renewed'
   return (
@@ -129,16 +129,16 @@ function MembershipStatusBadge({ status }) {
     </span>
   )
 }
- 
+
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
- 
+
 function DetailModal({ member, onClose, onRenew }) {
   const endDate = computeEndDate(member)
   const state = getMembershipState(member)
   const expired = state === 'expired'
   const pending = state === 'pending'
   const fmt = (d) => d ? new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '—'
- 
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
@@ -219,9 +219,9 @@ function DetailModal({ member, onClose, onRenew }) {
     </div>
   )
 }
- 
+
 // ─── Renew Modal ──────────────────────────────────────────────────────────────
- 
+
 function RenewModal({ member, onClose, onSuccess }) {
   const [subscriptionType, setSubscriptionType] = useState(member.subscription_type === 'custom' ? 'monthly' : member.subscription_type)
   const _currentEndForRenewal = computeEndDate(member)
@@ -241,22 +241,22 @@ function RenewModal({ member, onClose, onSuccess }) {
   const [error, setError]     = useState(null)
   const [fullName, setFullName]       = useState(`${member.first_name || ''} ${member.last_name || ''}`.trim())
   const [phoneNumber, setPhoneNumber] = useState(member.phone_number || '')
- 
+
   const DAILY_UPGRADE_DISCOUNT = 7
   const isCustom   = subscriptionType === 'custom'
   const wasDaily   = member.subscription_type === 'daily'
   // Daily member switching to a non-daily plan: needs real contact info, gets $7 off
   const switchingFromDaily = wasDaily && subscriptionType !== 'daily'
- 
+
   const rawBasePrice = isCustom ? parseFloat(customPrice) || 0 : FIXED_PRICES[subscriptionType] || 0
   const basePrice  = switchingFromDaily ? Math.max(0, rawBasePrice - DAILY_UPGRADE_DISCOUNT) : rawBasePrice
   const discVal    = parseFloat(discountValue) || 0
   const amountPaid = discountType === 'percentage'
     ? Math.max(0, basePrice - basePrice * (discVal / 100))
     : discountType === 'fixed' ? Math.max(0, basePrice - discVal) : basePrice
- 
+
   const infoMissing = switchingFromDaily && (!fullName.trim() || !phoneNumber.trim())
- 
+
   const handleRenew = async () => {
     setError(null)
     if (infoMissing) { setError('Please enter a name and phone number for this membership.'); return }
@@ -287,7 +287,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     if (err) { setError(err.message); return }
     onSuccess()
   }
- 
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
@@ -379,12 +379,12 @@ function RenewModal({ member, onClose, onSuccess }) {
     </div>
   )
 }
- 
+
 // ─── Month Navigator ──────────────────────────────────────────────────────────
- 
+
 function MonthNavigator({ value, onChange }) {
   const now = toYearMonth(new Date())
- 
+
   const prev = () => {
     const [y, m] = value.split('-').map(Number)
     const d = new Date(y, m - 2, 1)
@@ -395,7 +395,7 @@ function MonthNavigator({ value, onChange }) {
     const d = new Date(y, m, 1)
     onChange(toYearMonth(d))
   }
- 
+
   return (
     <div className="flex items-center gap-2">
       <button onClick={prev} className="p-1.5 rounded-lg bg-navy-900 border border-navy-700 hover:border-slate-500 text-slate-400 hover:text-white transition-colors">
@@ -412,11 +412,11 @@ function MonthNavigator({ value, onChange }) {
     </div>
   )
 }
- 
+
 // ─── Main component ──────────────────────────────────────────────────────────
- 
+
 // ─── SMS Broadcast Modal ──────────────────────────────────
- 
+
 // Normalizes a raw phone number into an international dialing format (digits only,
 // no +). Reused for SMS the same way it was used for WhatsApp.
 // Rules:
@@ -439,7 +439,7 @@ export function normalizeLebanonPhone(raw) {
   if (digits.length > 8) return digits                // assume a country code is included
   return '961' + digits                               // fallback: assume Lebanese
 }
- 
+
 // Strict check: only true Lebanon numbers pass, so no other country's number
 // ever ends up in the SMS recipient list. Lebanon (+961) national numbers are
 // either 8 digits, or 7 digits starting with 3 (older mobile format).
@@ -452,7 +452,7 @@ export function isLebanonNumber(normalized) {
   if (national.length === 7 && national.startsWith('3')) return true
   return false
 }
- 
+
 function SMSModal({ onClose }) {
   const [message, setMessage]       = useState('')
   const [recipients, setRecipients] = useState([])
@@ -462,7 +462,7 @@ function SMSModal({ onClose }) {
   const [sending, setSending]       = useState(false)
   const [result, setResult]         = useState(null) // { sent, total, failed }
   const [skippedCount, setSkippedCount] = useState(0) // non-Lebanon numbers excluded
- 
+
   // Load ALL active memberships (across the whole database, not just the current
   // month view) and default every one with a usable, Lebanon-only phone number
   // to selected. Non-Lebanon numbers are excluded entirely — they never appear
@@ -483,10 +483,10 @@ function SMSModal({ onClose }) {
           phone: normalizeLebanonPhone(m.phone_number),
         }))
         .filter(r => r.phone)
- 
+
       const lebanonOnly = activeWithPhone.filter(r => isLebanonNumber(r.phone))
       setSkippedCount(activeWithPhone.length - lebanonOnly.length)
- 
+
       // De-duplicate by normalized phone so nobody gets messaged twice.
       const seen = new Set()
       const deduped = []
@@ -501,7 +501,7 @@ function SMSModal({ onClose }) {
     load()
     return () => { cancelled = true }
   }, [])
- 
+
   const selected    = recipients.filter(r => r.selected)
   const q           = search.trim().toLowerCase()
   const visible     = q
@@ -509,17 +509,18 @@ function SMSModal({ onClose }) {
     : recipients
   const allSelected = visible.length > 0 && visible.every(r => r.selected)
   const canSend     = message.trim().length > 0 && selected.length > 0 && !sending
- 
+
   const toggle    = (id) => setRecipients(rs => rs.map(r => r.id === id ? { ...r, selected: !r.selected } : r))
   const toggleAll = () => {
     const ids = new Set(visible.map(r => r.id))
     setRecipients(rs => rs.map(r => ids.has(r.id) ? { ...r, selected: !allSelected } : r))
   }
- 
-  // True one-click bulk send: a single request to your backend (Supabase Edge
-  // Function), which loops through every selected number and sends via your SMS
-  // provider (e.g. Twilio). No per-recipient tap needed — unlike WhatsApp, SMS
-  // goes straight from a server to the carrier.
+
+  // True one-click bulk send: a single request to your backend (the Vercel
+  // serverless function at /api/send-bulk-sms), which loops through every
+  // selected number and sends via your SMS provider (e.g. Twilio). No
+  // per-recipient tap needed — unlike WhatsApp, SMS goes straight from a
+  // server to the carrier.
   const sendToAll = async () => {
     setError(null)
     setResult(null)
@@ -542,7 +543,7 @@ function SMSModal({ onClose }) {
       setSending(false)
     }
   }
- 
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-navy-700 max-h-[90vh] flex flex-col">
@@ -555,14 +556,14 @@ function SMSModal({ onClose }) {
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
- 
+
         {error && <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>}
         {!loading && skippedCount > 0 && (
           <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-700/40 rounded-lg text-yellow-400 text-xs">
             Skipped {skippedCount} active member{skippedCount !== 1 ? 's' : ''} with a non-Lebanon phone number — SMS is Lebanon-only for now.
           </div>
         )}
- 
+
         <label className="block text-sm text-slate-400 mb-1">Message</label>
         <textarea
           value={message}
@@ -571,7 +572,7 @@ function SMSModal({ onClose }) {
           placeholder="Type the message to send…"
           className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 mb-4 resize-none focus:outline-none focus:border-electric-blue"
         />
- 
+
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-slate-400">
             Recipients {loading ? '' : (q ? `(${visible.length} shown · ${selected.length} selected)` : `(${selected.length} selected)`)}
@@ -582,7 +583,7 @@ function SMSModal({ onClose }) {
             </button>
           )}
         </div>
- 
+
         {!loading && recipients.length > 0 && (
           <div className="relative mb-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
@@ -595,7 +596,7 @@ function SMSModal({ onClose }) {
             />
           </div>
         )}
- 
+
         <div className="flex-1 overflow-y-auto border border-navy-700 rounded-lg divide-y divide-navy-700 mb-4 min-h-[80px]">
           {loading ? (
             <p className="p-4 text-center text-slate-500 text-sm">Loading active members…</p>
@@ -615,13 +616,13 @@ function SMSModal({ onClose }) {
             ))
           )}
         </div>
- 
+
         {result && (
           <div className={`mb-4 p-3 rounded-lg text-sm text-center ${result.failed > 0 ? 'bg-yellow-900/30 border border-yellow-700/50 text-yellow-400' : 'bg-green-900/30 border border-green-700/50 text-green-400'}`}>
             Sent {result.sent} of {result.total}{result.failed > 0 ? ` — ${result.failed} failed` : ''}.
           </div>
         )}
- 
+
         <div className="space-y-2">
           <p className="text-[11px] text-slate-500 text-center leading-snug">
             This sends directly through your SMS provider — one click reaches every selected recipient, no manual steps.
@@ -641,7 +642,7 @@ function SMSModal({ onClose }) {
     </div>
   )
 }
- 
+
 export default function Memberships() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -662,45 +663,45 @@ export default function Memberships() {
     const t = new Date().toISOString().split('T')[0]
     return { start: t, end: t }
   })
- 
+
   const fetchMembers = useCallback(async () => {
     setLoading(true)
     const useCustom = isAdmin && rangeMode === 'custom'
     const { from, to } = useCustom
       ? { from: customRange.start, to: customRange.end }
       : monthBounds(selectedMonth)
- 
+
     let query = supabase
       .from('members')
       .select('*')
       .gte('created_at', `${from}T00:00:00.000Z`)
       .lte('created_at', `${to}T23:59:59.999Z`)
       .order('created_at', { ascending: false })
- 
+
     if (filters.subscriptionType !== 'all') {
       query = query.eq('subscription_type', filters.subscriptionType)
     }
- 
+
     const { data, error } = await query
     if (!error) setMembers(data || [])
     setLoading(false)
   }, [filters, selectedMonth, rangeMode, customRange, isAdmin])
- 
+
   useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
- 
+
   // Reset to current month when component mounts (auto monthly reset)
   useEffect(() => {
     const now = toYearMonth(new Date())
     setSelectedMonth(now)
   }, [])
- 
+
   const enrichedMembers = members.map(m => ({
     ...m,
     _computedEndDate: computeEndDate(m),
     _state: getMembershipState(m),
     get _expired() { return isMembershipExpired(this._computedEndDate) },
   }))
- 
+
   const filteredMembers = enrichedMembers.filter(m => {
     const q = search.toLowerCase()
     if (q) {
@@ -711,21 +712,21 @@ export default function Memberships() {
     if (filters.membershipStatus !== 'all' && (m.membership_status ?? 'new') !== filters.membershipStatus) return false
     return true
   })
- 
+
   const totalPages = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE))
   const safePage   = Math.min(page, totalPages)
   const paginated  = filteredMembers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
- 
+
   const handleFilterChange = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
- 
+
   const clearFilters = () => {
     setFilters(DEFAULT_FILTERS)
     setSearch('')
     setPage(1)
   }
- 
+
   const hasActiveFilters = search !== '' || filters.subscriptionType !== 'all' || filters.statusFilter !== 'all' || filters.membershipStatus !== 'all'
- 
+
   const handleEdit   = (member) => { setCurrentMember(member); setIsModalOpen(true) }
   const handleDelete = async (id) => {
     if (confirm('Are you sure you want to delete this member?')) {
@@ -733,12 +734,12 @@ export default function Memberships() {
       fetchMembers()
     }
   }
- 
+
   // Monthly totals summary
   const activeCount     = filteredMembers.filter(m => m._state === 'active').length
   const pendingCount    = filteredMembers.filter(m => m._state === 'pending').length
   const expiredCount    = filteredMembers.filter(m => m._state === 'expired').length
- 
+
   return (
     <div>
       {/* ── Page header ── */}
@@ -797,7 +798,7 @@ export default function Memberships() {
           </button>
         </div>
       </div>
- 
+
       {/* ── Monthly summary cards (admin only) ── */}
       {isAdmin && (
       <div className="grid grid-cols-4 gap-4 mb-6">
@@ -817,10 +818,10 @@ export default function Memberships() {
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Pending</p>
           <p className="text-2xl font-bold text-yellow-400">{loading ? '—' : pendingCount}</p>
         </div>
- 
+
       </div>
       )}
- 
+
       {/* ── Filters ── */}
       <div className="bg-navy-800 rounded-xl border border-navy-700 p-4 mb-6 space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -862,7 +863,7 @@ export default function Memberships() {
             ))}
           </div>
         </div>
- 
+
         <div className="flex flex-wrap gap-2">
           {SUBSCRIPTION_TYPES.map(type => (
             <button key={type} onClick={() => handleFilterChange('subscriptionType', type)}
@@ -872,10 +873,10 @@ export default function Memberships() {
             >{type}</button>
           ))}
         </div>
- 
- 
+
+
       </div>
- 
+
       {/* ── Table ── */}
       <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
         <table className="w-full text-left">
@@ -956,7 +957,7 @@ export default function Memberships() {
           </tbody>
         </table>
       </div>
- 
+
       {/* ── Pagination ── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 text-sm text-slate-400">
@@ -971,7 +972,7 @@ export default function Memberships() {
           </div>
         </div>
       )}
- 
+
       {/* ── Modals ── */}
       {isModalOpen && (
         <MemberModal member={currentMember} onClose={() => { setIsModalOpen(false); fetchMembers() }} />
@@ -988,4 +989,3 @@ export default function Memberships() {
     </div>
   )
 }
- 
