@@ -3,7 +3,11 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { X } from 'lucide-react'
 
-const FIXED_PRICES = { daily: 5, monthly: 40 }
+// Updated prices based on class type
+const FIXED_PRICES = {
+  aerobics: { daily: 5, monthly: 60 },
+  zumba: { daily: 5, monthly: 40 }
+}
 const DURATION_DAYS = { daily: 0, monthly: 30 }
 
 export default function ClassMemberModal({ member, onClose }) {
@@ -14,7 +18,7 @@ export default function ClassMemberModal({ member, onClose }) {
     description: '',
     class_type: 'aerobics',
     subscription_type: 'monthly',
-    base_price: FIXED_PRICES.monthly,
+    base_price: FIXED_PRICES.aerobics.monthly, // Default to aerobics monthly
     discount_type: 'none',
     discount_value: 0,
     start_date: new Date().toISOString().split('T')[0],
@@ -25,14 +29,18 @@ export default function ClassMemberModal({ member, onClose }) {
 
   useEffect(() => {
     if (member) {
+      const classType = member.class_type || 'aerobics'
+      const subType = member.subscription_type || 'monthly'
+      const defaultPrice = FIXED_PRICES[classType]?.[subType] || 0
+
       setFormData({
         first_name: member.first_name || '',
         last_name: member.last_name || '',
         phone_number: member.phone_number || '',
         description: member.description || '',
-        class_type: member.class_type || 'aerobics',
-        subscription_type: member.subscription_type || 'monthly',
-        base_price: member.base_price ?? FIXED_PRICES.monthly,
+        class_type: classType,
+        subscription_type: subType,
+        base_price: member.base_price ?? defaultPrice,
         discount_type: member.discount_type || 'none',
         discount_value: member.discount_value ?? 0,
         start_date: member.start_date ? member.start_date.split('T')[0] : new Date().toISOString().split('T')[0],
@@ -59,10 +67,11 @@ export default function ClassMemberModal({ member, onClose }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    const updated = { ...formData, [name]: value }
+    let updated = { ...formData, [name]: value }
 
-    if (name === 'subscription_type') {
-      updated.base_price = FIXED_PRICES[value]
+    // Automatically update the base price if the class or subscription changes
+    if (name === 'subscription_type' || name === 'class_type') {
+      updated.base_price = FIXED_PRICES[updated.class_type][updated.subscription_type]
     }
 
     setFormData(updated)
@@ -153,8 +162,9 @@ export default function ClassMemberModal({ member, onClose }) {
             <div>
               <label className="block text-sm text-slate-400 mb-1">Plan</label>
               <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
-                <option value="daily">Daily - ${FIXED_PRICES.daily}</option>
-                <option value="monthly">Monthly - ${FIXED_PRICES.monthly}</option>
+                {/* Dynamically display prices based on the selected class type */}
+                <option value="daily">Daily - ${FIXED_PRICES[formData.class_type].daily}</option>
+                <option value="monthly">Monthly - ${FIXED_PRICES[formData.class_type].monthly}</option>
               </select>
             </div>
           </div>
