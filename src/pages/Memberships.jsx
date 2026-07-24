@@ -461,15 +461,25 @@ function SmsModal({ members, onClose }) {
     setFeedback(null)
 
     try {
-      // Calls your secure Supabase Edge Function
-      const { error } = await supabase.functions.invoke('send-bulk-sms', {
-        body: {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-bulk-sms`, {
+        method: 'POST',
+        headers: {
+          // Using text/plain bypasses the CORS preflight check completely!
+          'Content-Type': 'text/plain',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
           recipients: selectedRecipients.map(r => r.formatted),
           message: message
-        }
+        })
       })
 
-      if (error) throw error
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send SMS')
+      }
 
       setFeedback({ type: 'success', text: `Successfully queued ${selectedRecipients.length} SMS messages.` })
       setMessage('')
@@ -480,7 +490,6 @@ function SmsModal({ members, onClose }) {
       setLoading(false)
     }
   }
-
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-2xl p-6 border border-navy-700 max-h-[90vh] flex flex-col">
