@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
-import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer, MessageCircle } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 import { useAuth } from '../context/AuthContext'
 ​
@@ -410,6 +410,182 @@ function MonthNavigator({ value, onChange }) {
 ​
 // ─── Main component ──────────────────────────────────────────────────────────
 ​
+// ─── WhatsApp Broadcast Modal ──────────────────────────────────
+​
+// Normalizes a raw phone number into an international WhatsApp target (digits only, no +).
+// Rules:
+//  - Already has a country code (starts with + / 00 / 961) -> keep it.
+//  - Local number written with a leading 0 (e.g. 03 123 456) -> drop the 0, prepend 961.
+//  - Plain 8-digit number -> Lebanese, prepend 961.
+//  - 7-digit number starting with 3 (e.g. 3 123 456) -> Lebanese mobile, prepend 961.
+export function normalizeLebanonPhone(raw) {
+  if (!raw) return null
+  const trimmed = String(raw).trim()
+  const hasPlus = trimmed.startsWith('+')
+  const digits = trimmed.replace(/\D/g, '')
+  if (!digits) return null
+  if (hasPlus) return digits                          // already carries a country code
+  if (digits.startsWith('00')) return digits.slice(2) // 00 international prefix
+  if (digits.startsWith('961')) return digits         // Lebanese code already present
+  if (digits.startsWith('0')) return '961' + digits.slice(1) // local trunk 0
+  if (digits.length === 8) return '961' + digits      // Lebanese 8-digit number
+  if (digits.length === 7 && digits.startsWith('3')) return '961' + digits // +961 3xxxxxx
+  if (digits.length > 8) return digits                // assume a country code is included
+  return '961' + digits                               // fallback: assume Lebanese
+}
+​
+function WhatsAppModal({ onClose }) {
+  const [message, setMessage]       = useState('')
+  const [recipients, setRecipients] = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState(null)
+  const [sentIds, setSentIds]       = useState([])
+​
+  // Load ALL active memberships (across the whole database, not just the current
+  // month view) and default every one with a usable phone number to selected.
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      const { data, error: err } = await supabase.from('members').select('*')
+      if (cancelled) return
+      if (err) { setError(err.message); setLoading(false); return }
+      const active = (data || [])
+        .filter(m => getMembershipState(m) === 'active')
+        .map(m => ({
+          id: m.id,
+          name: memberDisplayName(m),
+          rawPhone: m.phone_number || '',
+          phone: normalizeLebanonPhone(m.phone_number),
+        }))
+        .filter(r => r.phone)
+      // De-duplicate by normalized phone so nobody gets messaged twice.
+      const seen = new Set()
+      const deduped = []
+      for (const r of active) {
+        if (seen.has(r.phone)) continue
+        seen.add(r.phone)
+        deduped.push({ ...r, selected: true })
+      }
+      setRecipients(deduped)
+      setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+​
+  const selected    = recipients.filter(r => r.selected)
+  const queue       = selected.filter(r => !sentIds.includes(r.id))
+  const allSelected = recipients.length > 0 && recipients.every(r => r.selected)
+  const canSend     = message.trim().length > 0 && selected.length > 0
+  const sentCount   = selected.filter(r => sentIds.includes(r.id)).length
+  const done        = selected.length > 0 && queue.length === 0
+​
+  const toggle    = (id) => setRecipients(rs => rs.map(r => r.id === id ? { ...r, selected: !r.selected } : r))
+  const toggleAll = () => setRecipients(rs => rs.map(r => ({ ...r, selected: !allSelected })))
+​
+  const waUrl = (phone) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+​
+  // Open recipients one at a time (each click is a user gesture, so pop-up
+  // blockers stay happy). Best on the front-desk phone/tablet running the app.
+  const openNext = () => {
+    const next = queue[0]
+    if (!next) return
+    window.open(waUrl(next.phone), '_blank')
+    setSentIds(ids => ids.includes(next.id) ? ids : [...ids, next.id])
+  }
+​
+  // Fire every remaining chat at once (may be blocked on desktop browsers).
+  const openAll = () => {
+    for (const r of queue) window.open(waUrl(r.phone), '_blank')
+    setSentIds(selected.map(r => r.id))
+  }
+​
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <div className="bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-navy-700 max-h-[90vh] flex flex-col">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <MessageCircle size={20} className="text-green-500" /> Send WhatsApp Message
+            </h3>
+            <p className="text-slate-400 text-sm mt-0.5">Defaults to every active membership with a phone number.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+        </div>
+​
+        {error && <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>}
+​
+        <label className="block text-sm text-slate-400 mb-1">Message</label>
+        <textarea
+          value={message}
+          onChange={e => setMessage(e.target.value)}
+          rows={4}
+          placeholder="Type the message to send…"
+          className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 mb-4 resize-none focus:outline-none focus:border-electric-blue"
+        />
+​
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-slate-400">
+            Recipients {loading ? '' : `(${selected.length} selected)`}
+          </span>
+          {!loading && recipients.length > 0 && (
+            <button onClick={toggleAll} className="text-xs text-electric-blue hover:underline">
+              {allSelected ? 'Deselect all' : 'Select all'}
+            </button>
+          )}
+        </div>
+​
+        <div className="flex-1 overflow-y-auto border border-navy-700 rounded-lg divide-y divide-navy-700 mb-4 min-h-[80px]">
+          {loading ? (
+            <p className="p-4 text-center text-slate-500 text-sm">Loading active members…</p>
+          ) : recipients.length === 0 ? (
+            <p className="p-4 text-center text-slate-500 text-sm">No active members with a phone number.</p>
+          ) : (
+            recipients.map(r => (
+              <label key={r.id} className="flex items-center gap-3 px-3 py-2 hover:bg-navy-900/50 cursor-pointer">
+                <input type="checkbox" checked={r.selected} onChange={() => toggle(r.id)} className="accent-green-500 w-4 h-4" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm truncate">{r.name}</p>
+                  <p className="text-slate-500 text-xs">+{r.phone}{r.rawPhone && r.rawPhone.replace(/\D/g, '') !== r.phone ? ` · ${r.rawPhone}` : ''}</p>
+                </div>
+                {sentIds.includes(r.id) && <span className="text-green-400 text-xs font-medium">Opened</span>}
+              </label>
+            ))
+          )}
+        </div>
+​
+        {done ? (
+          <div className="mb-4 p-3 bg-green-900/30 border border-green-700/50 rounded-lg text-green-400 text-sm text-center">
+            Opened WhatsApp for all {selected.length} recipient(s).
+          </div>
+        ) : sentCount > 0 ? (
+          <p className="text-xs text-slate-500 mb-2 text-center">Opened {sentCount} of {selected.length}. Continue with the next recipient below.</p>
+        ) : null}
+​
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
+          <button
+            onClick={openAll}
+            disabled={!canSend || done}
+            title="Opens a WhatsApp chat for every remaining recipient at once"
+            className="px-4 py-2 border border-green-700 text-green-400 hover:bg-green-900/30 rounded-lg font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Open all
+          </button>
+          <button
+            onClick={openNext}
+            disabled={!canSend || queue.length === 0}
+            className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+          >
+            <MessageCircle size={16} /> {queue.length > 0 ? `Send to ${queue[0].name.split(' ')[0]} (${sentCount + 1}/${selected.length})` : 'All sent'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+​
 export default function Memberships() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -423,6 +599,7 @@ export default function Memberships() {
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
+  const [isWhatsAppOpen, setIsWhatsAppOpen] = useState(false)
   // Admin-only date scope: 'monthly' (default) or 'custom' range
   const [rangeMode, setRangeMode] = useState('monthly')
   const [customRange, setCustomRange] = useState(() => {
@@ -550,6 +727,12 @@ export default function Memberships() {
           ) : (
             <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
           )}
+          <button
+            onClick={() => setIsWhatsAppOpen(true)}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+          >
+            <MessageCircle size={20} /> Send WhatsApp
+          </button>
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
             className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
@@ -742,6 +925,9 @@ export default function Memberships() {
       )}
       {renewMember && (
         <RenewModal member={renewMember} onClose={() => setRenewMember(null)} onSuccess={() => { setRenewMember(null); fetchMembers() }} />
+      )}
+      {isWhatsAppOpen && (
+        <WhatsAppModal onClose={() => setIsWhatsAppOpen(false)} />
       )}
     </div>
   )
