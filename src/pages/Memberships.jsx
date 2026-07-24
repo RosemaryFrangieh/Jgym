@@ -854,13 +854,15 @@ export default function Memberships() {
             <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
           )}
           
-          {/* Send SMS Button */}
-          <button
-            onClick={() => setSmsModalOpen(true)}
-            className="flex items-center gap-2 bg-electric-green text-navy-900 px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
-          >
-            <MessageSquare size={20} /> Send SMS
-          </button>
+          {/* Send SMS Button — Admin only */}
+{isAdmin && (
+  <button
+    onClick={() => setSmsModalOpen(true)}
+    className="flex items-center gap-2 bg-electric-green text-navy-900 px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+  >
+    <MessageSquare size={20} /> Send SMS
+  </button>
+)}
 
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
