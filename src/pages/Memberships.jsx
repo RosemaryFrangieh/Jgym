@@ -534,9 +534,16 @@ function SMSModal({ onClose }) {
           numbers: selected.map(r => r.phone),
         }),
       })
-      if (!res.ok) throw new Error(`Server responded with ${res.status}`)
-      const data = await res.json() // expected: { sent, failed, total }
-      setResult({ sent: data.sent ?? 0, failed: data.failed ?? 0, total: selected.length })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Server responded with ${res.status}`)
+      // Show any per-number Twilio failure reasons too (e.g. geo permissions,
+      // unverified trial number) so the cause is visible without digging into logs.
+      setResult({
+        sent: data.sent ?? 0,
+        failed: data.failed ?? 0,
+        total: selected.length,
+        errors: data.errors || [],
+      })
     } catch (err) {
       setError(err.message || 'Failed to send SMS. Check your backend / Twilio setup.')
     } finally {
@@ -618,8 +625,13 @@ function SMSModal({ onClose }) {
         </div>
 
         {result && (
-          <div className={`mb-4 p-3 rounded-lg text-sm text-center ${result.failed > 0 ? 'bg-yellow-900/30 border border-yellow-700/50 text-yellow-400' : 'bg-green-900/30 border border-green-700/50 text-green-400'}`}>
-            Sent {result.sent} of {result.total}{result.failed > 0 ? ` — ${result.failed} failed` : ''}.
+          <div className={`mb-4 p-3 rounded-lg text-sm ${result.failed > 0 ? 'bg-yellow-900/30 border border-yellow-700/50 text-yellow-400' : 'bg-green-900/30 border border-green-700/50 text-green-400'}`}>
+            <p className="text-center">Sent {result.sent} of {result.total}{result.failed > 0 ? ` — ${result.failed} failed` : ''}.</p>
+            {result.errors && result.errors.length > 0 && (
+              <ul className="mt-2 text-xs text-yellow-300/90 list-disc list-inside space-y-0.5">
+                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            )}
           </div>
         )}
 
