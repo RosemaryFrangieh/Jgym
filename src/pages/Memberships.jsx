@@ -1,8 +1,8 @@
 // membership.jsx
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
-import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer, MessageSquare } from 'lucide-react'
+import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer, MessageSquare, Send } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 import { useAuth } from '../context/AuthContext'
 
@@ -15,12 +15,6 @@ export function isMembershipExpired(endDate) {
   return todayStr > endStr
 }
 
-// Current lifecycle state of a membership: 'pending', 'active', or 'expired'.
-// Derived purely from the dates (no DB column needed):
-//  - 'pending' when the start date is still in the future (e.g. an early renewal
-//    made before the previous period expired). Flips to 'active' on the start day.
-//  - 'expired' once today passes the (computed) end date.
-//  - 'active' otherwise.
 export function getMembershipState(member) {
   const todayStr = new Date().toISOString().split('T')[0]
   if (member.start_date) {
@@ -50,13 +44,11 @@ function toYearMonth(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-// Returns a display label like "June 2026"
 function formatYearMonth(ym) {
   const [y, m] = ym.split('-')
   return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
 
-// Returns first and last ISO date strings of a given 'YYYY-MM'
 function monthBounds(ym) {
   const [y, m] = ym.split('-').map(Number)
   const first = new Date(y, m - 1, 1)
@@ -67,17 +59,32 @@ function monthBounds(ym) {
   }
 }
 
+// ─── SMS Formatting & Logic ───────────────────────────────────────────────────
+
+// Formats the phone number based on your rules:
+// 8 digits -> +961 XXXXXXXX
+// 7 digits starting with 3 -> +961 3XXXXXX
+function formatLbNumber(phone) {
+  if (!phone) return null
+  let cleaned = ('' + phone).replace(/\D/g, '') // remove all non-digits
+  
+  // Remove country code if already present
+  if (cleaned.startsWith('961')) cleaned = cleaned.substring(3)
+  // Remove leading zero if present (e.g. 03 123 456 -> 3 123 456)
+  if (cleaned.startsWith('0')) cleaned = cleaned.substring(1)
+
+  if (cleaned.length === 8) return `+961${cleaned}`
+  if (cleaned.length === 7 && cleaned.startsWith('3')) return `+961${cleaned}`
+  
+  return null // Invalid for our criteria
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 10
 const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'family', 'custom']
 const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all', membershipStatus: 'all' }
 const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40, family: 100 }
-
-// Relative path — this is a Vercel Serverless Function that ships automatically
-// with your app (lives in /api/send-bulk-sms.js at the project root). No separate
-// deploy or external URL needed since it's served from the same domain.
-const SEND_BULK_SMS_URL = '/api/send-bulk-sms'
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 
@@ -226,9 +233,6 @@ function RenewModal({ member, onClose, onSuccess }) {
   const [subscriptionType, setSubscriptionType] = useState(member.subscription_type === 'custom' ? 'monthly' : member.subscription_type)
   const _currentEndForRenewal = computeEndDate(member)
   const _alreadyExpired = isMembershipExpired(_currentEndForRenewal)
-  // Early renewal: if the member is NOT expired yet, start the new period the day
-  // AFTER their current expiration date so no days are lost and there's no overlap.
-  // If they're already expired, start today (default behavior).
   const _defaultStartDate = (!_alreadyExpired && _currentEndForRenewal)
     ? (() => { const d = new Date(_currentEndForRenewal); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0] })()
     : new Date().toISOString().split('T')[0]
@@ -245,7 +249,6 @@ function RenewModal({ member, onClose, onSuccess }) {
   const DAILY_UPGRADE_DISCOUNT = 7
   const isCustom   = subscriptionType === 'custom'
   const wasDaily   = member.subscription_type === 'daily'
-  // Daily member switching to a non-daily plan: needs real contact info, gets $7 off
   const switchingFromDaily = wasDaily && subscriptionType !== 'daily'
 
   const rawBasePrice = isCustom ? parseFloat(customPrice) || 0 : FIXED_PRICES[subscriptionType] || 0
@@ -380,6 +383,219 @@ function RenewModal({ member, onClose, onSuccess }) {
   )
 }
 
+// ─── SMS Modal ────────────────────────────────────────────────────────────────
+
+function SmsModal({ members, onClose }) {
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [selectedIds, setSelectedIds] = useState(new Set())
+
+  // Process numbers based on rules and compute state
+  const processedMembers = useMemo(() => {
+    return members.map(m => {
+      const state = getMembershipState(m)
+      return {
+        id: m.id,
+        name: memberDisplayName(m),
+        raw: m.phone_number,
+        formatted: formatLbNumber(m.phone_number),
+        state: state
+      }
+    })
+  }, [members])
+
+  const filteredModalMembers = processedMembers.filter(m => {
+    if (!m.formatted) return false // Only show valid numbers in the list
+    
+    // Filter by search
+    const q = search.toLowerCase()
+    if (q && !m.name.toLowerCase().includes(q) && !(m.raw || '').includes(q)) return false
+    
+    // Filter by status
+    if (statusFilter !== 'all' && m.state !== statusFilter) return false
+    
+    return true
+  })
+
+  const toggleSelection = (id) => {
+    const newSelection = new Set(selectedIds)
+    if (newSelection.has(id)) {
+      newSelection.delete(id)
+    } else {
+      newSelection.add(id)
+    }
+    setSelectedIds(newSelection)
+  }
+
+  const toggleSelectAll = () => {
+    if (filteredModalMembers.every(m => selectedIds.has(m.id))) {
+      // Deselect all visible
+      const newSelection = new Set(selectedIds)
+      filteredModalMembers.forEach(m => newSelection.delete(m.id))
+      setSelectedIds(newSelection)
+    } else {
+      // Select all visible
+      const newSelection = new Set(selectedIds)
+      filteredModalMembers.forEach(m => newSelection.add(m.id))
+      setSelectedIds(newSelection)
+    }
+  }
+
+  const selectedRecipients = processedMembers.filter(m => selectedIds.has(m.id) && m.formatted)
+  const allVisibleSelected = filteredModalMembers.length > 0 && filteredModalMembers.every(m => selectedIds.has(m.id))
+
+  const handleSend = async () => {
+    if (!message.trim()) {
+      setFeedback({ type: 'error', text: 'Message cannot be empty.' })
+      return
+    }
+    if (selectedRecipients.length === 0) {
+      setFeedback({ type: 'error', text: 'Please select at least one recipient.' })
+      return
+    }
+
+    setLoading(true)
+    setFeedback(null)
+
+    try {
+      // Calls your secure Supabase Edge Function
+      const { error } = await supabase.functions.invoke('send-bulk-sms', {
+        body: {
+          recipients: selectedRecipients.map(r => r.formatted),
+          message: message
+        }
+      })
+
+      if (error) throw error
+
+      setFeedback({ type: 'success', text: `Successfully queued ${selectedRecipients.length} SMS messages.` })
+      setMessage('')
+      setSelectedIds(new Set()) // Clear selection
+    } catch (err) {
+      setFeedback({ type: 'error', text: err.message || 'Failed to send SMS.' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <div className="bg-navy-800 rounded-xl w-full max-w-2xl p-6 border border-navy-700 max-h-[90vh] flex flex-col">
+        <div className="flex justify-between items-center mb-5">
+          <div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2"><MessageSquare size={20} /> Send Bulk SMS</h3>
+            <p className="text-slate-400 text-sm mt-0.5">Select members and type your message.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+        </div>
+
+        {/* Selection Summary & Select All */}
+        <div className="bg-navy-900 border border-navy-700 rounded-lg p-3 mb-4 text-sm flex justify-between items-center">
+          <div className="flex flex-col">
+            <span className="text-slate-400 text-xs uppercase tracking-wide">Total Selected</span>
+            <span className="text-green-400 font-bold text-lg">{selectedRecipients.length} Members</span>
+          </div>
+          <button 
+            onClick={toggleSelectAll} 
+            className="px-3 py-1.5 bg-navy-700 text-white rounded-md text-sm hover:bg-navy-600 transition-colors"
+          >
+            {allVisibleSelected ? 'Deselect Visible' : 'Select All Visible'}
+          </button>
+        </div>
+
+        {feedback && (
+          <div className={`mb-4 p-3 rounded-lg text-sm ${feedback.type === 'error' ? 'bg-red-900/50 border border-red-700 text-red-300' : 'bg-green-900/50 border border-green-700 text-green-300'}`}>
+            {feedback.text}
+          </div>
+        )}
+
+        {/* Filters & Search */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+            <input
+              type="text"
+              placeholder="Search name or phone..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
+            />
+          </div>
+          <div className="flex items-center gap-1 bg-navy-900 border border-navy-700 rounded-lg p-1">
+            {['all', 'active', 'pending', 'expired'].map(s => (
+              <button 
+                key={s} 
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
+                  statusFilter === s ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Recipients List */}
+        <div className="flex-1 overflow-y-auto bg-navy-900 border border-navy-700 rounded-lg p-2 mb-4 min-h-[150px] max-h-[300px]">
+          {filteredModalMembers.length === 0 ? (
+            <div className="text-center text-slate-500 py-4 text-sm">No valid members found for your filters.</div>
+          ) : (
+            filteredModalMembers.map(m => (
+              <div 
+                key={m.id} 
+                className={`flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-navy-800 transition-colors ${selectedIds.has(m.id) ? 'bg-navy-800' : ''}`}
+                onClick={() => toggleSelection(m.id)}
+              >
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedIds.has(m.id)} 
+                    onChange={() => toggleSelection(m.id)} 
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-4 h-4 accent-electric-blue cursor-pointer"
+                  />
+                  <div>
+                    <p className="text-white text-sm font-medium">{m.name}</p>
+                    <p className="text-slate-500 text-xs">{m.formatted}</p>
+                  </div>
+                </div>
+                <StatusBadge state={m.state} />
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Message Textarea */}
+        <div className="mb-4">
+          <label className="block text-sm text-slate-400 mb-1">Message</label>
+          <textarea 
+            value={message} 
+            onChange={e => setMessage(e.target.value)} 
+            rows={4}
+            placeholder="Type your message here..."
+            className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-electric-blue"
+          />
+          <p className="text-xs text-slate-500 mt-1">{message.length} characters</p>
+        </div>
+
+        {/* Footer Actions */}
+        <div className="flex justify-end gap-3 mt-auto">
+          <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
+          <button 
+            onClick={handleSend} 
+            disabled={loading || selectedRecipients.length === 0} 
+            className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm"
+          >
+            <Send size={15} /> {loading ? 'Sending...' : `Send to ${selectedRecipients.length} Members`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Month Navigator ──────────────────────────────────────────────────────────
 
 function MonthNavigator({ value, onChange }) {
@@ -415,246 +631,6 @@ function MonthNavigator({ value, onChange }) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-// ─── SMS Broadcast Modal ──────────────────────────────────
-
-// Normalizes a raw phone number into an international dialing format (digits only,
-// no +). Reused for SMS the same way it was used for WhatsApp.
-// Rules:
-//  - Already has a country code (starts with + / 00 / 961) -> keep it.
-//  - Local number written with a leading 0 (e.g. 03 123 456) -> drop the 0, prepend 961.
-//  - Plain 8-digit number -> Lebanese, prepend 961.
-//  - 7-digit number starting with 3 (e.g. 3 123 456) -> Lebanese mobile, prepend 961.
-export function normalizeLebanonPhone(raw) {
-  if (!raw) return null
-  const trimmed = String(raw).trim()
-  const hasPlus = trimmed.startsWith('+')
-  const digits = trimmed.replace(/\D/g, '')
-  if (!digits) return null
-  if (hasPlus) return digits                          // already carries a country code
-  if (digits.startsWith('00')) return digits.slice(2) // 00 international prefix
-  if (digits.startsWith('961')) return digits         // Lebanese code already present
-  if (digits.startsWith('0')) return '961' + digits.slice(1) // local trunk 0
-  if (digits.length === 8) return '961' + digits      // Lebanese 8-digit number
-  if (digits.length === 7 && digits.startsWith('3')) return '961' + digits // +961 3xxxxxx
-  if (digits.length > 8) return digits                // assume a country code is included
-  return '961' + digits                               // fallback: assume Lebanese
-}
-
-// Strict check: only true Lebanon numbers pass, so no other country's number
-// ever ends up in the SMS recipient list. Lebanon (+961) national numbers are
-// either 8 digits, or 7 digits starting with 3 (older mobile format).
-export function isLebanonNumber(normalized) {
-  if (!normalized) return false
-  const digits = String(normalized).replace(/\D/g, '')
-  if (!digits.startsWith('961')) return false
-  const national = digits.slice(3)
-  if (national.length === 8) return true
-  if (national.length === 7 && national.startsWith('3')) return true
-  return false
-}
-
-function SMSModal({ onClose }) {
-  const [message, setMessage]       = useState('')
-  const [recipients, setRecipients] = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
-  const [search, setSearch]         = useState('')
-  const [sending, setSending]       = useState(false)
-  const [result, setResult]         = useState(null) // { sent, total, failed }
-  const [skippedCount, setSkippedCount] = useState(0) // non-Lebanon numbers excluded
-
-  // Load ALL active memberships (across the whole database, not just the current
-  // month view) and default every one with a usable, Lebanon-only phone number
-  // to selected. Non-Lebanon numbers are excluded entirely — they never appear
-  // in the list, so there's no chance of accidentally texting them.
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      const { data, error: err } = await supabase.from('members').select('*')
-      if (cancelled) return
-      if (err) { setError(err.message); setLoading(false); return }
-      const activeWithPhone = (data || [])
-        .filter(m => getMembershipState(m) === 'active')
-        .map(m => ({
-          id: m.id,
-          name: memberDisplayName(m),
-          rawPhone: m.phone_number || '',
-          phone: normalizeLebanonPhone(m.phone_number),
-        }))
-        .filter(r => r.phone)
-
-      const lebanonOnly = activeWithPhone.filter(r => isLebanonNumber(r.phone))
-      setSkippedCount(activeWithPhone.length - lebanonOnly.length)
-
-      // De-duplicate by normalized phone so nobody gets messaged twice.
-      const seen = new Set()
-      const deduped = []
-      for (const r of lebanonOnly) {
-        if (seen.has(r.phone)) continue
-        seen.add(r.phone)
-        deduped.push({ ...r, selected: true })
-      }
-      setRecipients(deduped)
-      setLoading(false)
-    }
-    load()
-    return () => { cancelled = true }
-  }, [])
-
-  const selected    = recipients.filter(r => r.selected)
-  const q           = search.trim().toLowerCase()
-  const visible     = q
-    ? recipients.filter(r => r.name.toLowerCase().includes(q) || (r.phone || '').includes(q) || (r.rawPhone || '').toLowerCase().includes(q))
-    : recipients
-  const allSelected = visible.length > 0 && visible.every(r => r.selected)
-  const canSend     = message.trim().length > 0 && selected.length > 0 && !sending
-
-  const toggle    = (id) => setRecipients(rs => rs.map(r => r.id === id ? { ...r, selected: !r.selected } : r))
-  const toggleAll = () => {
-    const ids = new Set(visible.map(r => r.id))
-    setRecipients(rs => rs.map(r => ids.has(r.id) ? { ...r, selected: !allSelected } : r))
-  }
-
-  // True one-click bulk send: a single request to your backend (the Vercel
-  // serverless function at /api/send-bulk-sms), which loops through every
-  // selected number and sends via your SMS provider (e.g. Twilio). No
-  // per-recipient tap needed — unlike WhatsApp, SMS goes straight from a
-  // server to the carrier.
-  const sendToAll = async () => {
-    setError(null)
-    setResult(null)
-    setSending(true)
-    try {
-      const res = await fetch(SEND_BULK_SMS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: message.trim(),
-          numbers: selected.map(r => r.phone),
-        }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || `Server responded with ${res.status}`)
-      // Show any per-number Twilio failure reasons too (e.g. geo permissions,
-      // unverified trial number) so the cause is visible without digging into logs.
-      setResult({
-        sent: data.sent ?? 0,
-        failed: data.failed ?? 0,
-        total: selected.length,
-        errors: data.errors || [],
-      })
-    } catch (err) {
-      setError(err.message || 'Failed to send SMS. Check your backend / Twilio setup.')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <div className="bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-navy-700 max-h-[90vh] flex flex-col">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <MessageSquare size={20} className="text-electric-blue" /> Send SMS Message
-            </h3>
-            <p className="text-slate-400 text-sm mt-0.5">Defaults to every active membership with a Lebanon phone number.</p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
-        </div>
-
-        {error && <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>}
-        {!loading && skippedCount > 0 && (
-          <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-700/40 rounded-lg text-yellow-400 text-xs">
-            Skipped {skippedCount} active member{skippedCount !== 1 ? 's' : ''} with a non-Lebanon phone number — SMS is Lebanon-only for now.
-          </div>
-        )}
-
-        <label className="block text-sm text-slate-400 mb-1">Message</label>
-        <textarea
-          value={message}
-          onChange={e => setMessage(e.target.value)}
-          rows={4}
-          placeholder="Type the message to send…"
-          className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 mb-4 resize-none focus:outline-none focus:border-electric-blue"
-        />
-
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm text-slate-400">
-            Recipients {loading ? '' : (q ? `(${visible.length} shown · ${selected.length} selected)` : `(${selected.length} selected)`)}
-          </span>
-          {!loading && recipients.length > 0 && (
-            <button onClick={toggleAll} className="text-xs text-electric-blue hover:underline">
-              {allSelected ? 'Deselect all' : 'Select all'}
-            </button>
-          )}
-        </div>
-
-        {!loading && recipients.length > 0 && (
-          <div className="relative mb-2">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-            <input
-              type="text"
-              placeholder="Search recipients by name or phone…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-4 py-2 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-electric-blue"
-            />
-          </div>
-        )}
-
-        <div className="flex-1 overflow-y-auto border border-navy-700 rounded-lg divide-y divide-navy-700 mb-4 min-h-[80px]">
-          {loading ? (
-            <p className="p-4 text-center text-slate-500 text-sm">Loading active members…</p>
-          ) : recipients.length === 0 ? (
-            <p className="p-4 text-center text-slate-500 text-sm">No active members with a phone number.</p>
-          ) : visible.length === 0 ? (
-            <p className="p-4 text-center text-slate-500 text-sm">No recipients match your search.</p>
-          ) : (
-            visible.map(r => (
-              <label key={r.id} className="flex items-center gap-3 px-3 py-2 hover:bg-navy-900/50 cursor-pointer">
-                <input type="checkbox" checked={r.selected} onChange={() => toggle(r.id)} className="accent-electric-blue w-4 h-4" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm truncate">{r.name}</p>
-                  <p className="text-slate-500 text-xs">+{r.phone}{r.rawPhone && r.rawPhone.replace(/\D/g, '') !== r.phone ? ` · ${r.rawPhone}` : ''}</p>
-                </div>
-              </label>
-            ))
-          )}
-        </div>
-
-        {result && (
-          <div className={`mb-4 p-3 rounded-lg text-sm ${result.failed > 0 ? 'bg-yellow-900/30 border border-yellow-700/50 text-yellow-400' : 'bg-green-900/30 border border-green-700/50 text-green-400'}`}>
-            <p className="text-center">Sent {result.sent} of {result.total}{result.failed > 0 ? ` — ${result.failed} failed` : ''}.</p>
-            {result.errors && result.errors.length > 0 && (
-              <ul className="mt-2 text-xs text-yellow-300/90 list-disc list-inside space-y-0.5">
-                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
-              </ul>
-            )}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <p className="text-[11px] text-slate-500 text-center leading-snug">
-            This sends directly through your SMS provider — one click reaches every selected recipient, no manual steps.
-          </p>
-          <div className="flex justify-end gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
-            <button
-              onClick={sendToAll}
-              disabled={!canSend}
-              className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
-            >
-              <MessageSquare size={16} /> {sending ? 'Sending…' : `Send to All (${selected.length})`}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function Memberships() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -668,8 +644,8 @@ export default function Memberships() {
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
-  const [isSmsOpen, setIsSmsOpen]         = useState(false)
-  // Admin-only date scope: 'monthly' (default) or 'custom' range
+  const [smsModalOpen, setSmsModalOpen]   = useState(false) // <-- SMS Modal state
+  
   const [rangeMode, setRangeMode] = useState('monthly')
   const [customRange, setCustomRange] = useState(() => {
     const t = new Date().toISOString().split('T')[0]
@@ -701,7 +677,6 @@ export default function Memberships() {
 
   useEffect(() => { fetchMembers(); setPage(1) }, [fetchMembers])
 
-  // Reset to current month when component mounts (auto monthly reset)
   useEffect(() => {
     const now = toYearMonth(new Date())
     setSelectedMonth(now)
@@ -747,7 +722,6 @@ export default function Memberships() {
     }
   }
 
-  // Monthly totals summary
   const activeCount     = filteredMembers.filter(m => m._state === 'active').length
   const pendingCount    = filteredMembers.filter(m => m._state === 'pending').length
   const expiredCount    = filteredMembers.filter(m => m._state === 'expired').length
@@ -796,12 +770,15 @@ export default function Memberships() {
           ) : (
             <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
           )}
+          
+          {/* Send SMS Button */}
           <button
-            onClick={() => setIsSmsOpen(true)}
-            className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+            onClick={() => setSmsModalOpen(true)}
+            className="flex items-center gap-2 bg-electric-green text-navy-900 px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
           >
             <MessageSquare size={20} /> Send SMS
           </button>
+
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
             className="flex items-center gap-2 bg-electric-blue text-white px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
@@ -830,7 +807,6 @@ export default function Memberships() {
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Pending</p>
           <p className="text-2xl font-bold text-yellow-400">{loading ? '—' : pendingCount}</p>
         </div>
-
       </div>
       )}
 
@@ -885,8 +861,6 @@ export default function Memberships() {
             >{type}</button>
           ))}
         </div>
-
-
       </div>
 
       {/* ── Table ── */}
@@ -995,8 +969,8 @@ export default function Memberships() {
       {renewMember && (
         <RenewModal member={renewMember} onClose={() => setRenewMember(null)} onSuccess={() => { setRenewMember(null); fetchMembers() }} />
       )}
-      {isSmsOpen && (
-        <SMSModal onClose={() => setIsSmsOpen(false)} />
+      {smsModalOpen && (
+        <SmsModal members={members} onClose={() => setSmsModalOpen(false)} />
       )}
     </div>
   )
