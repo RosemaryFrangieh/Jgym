@@ -320,11 +320,18 @@ function RenewModal({ member, onClose, onSuccess }) {
     ? Math.max(0, basePrice - basePrice * (discVal / 100))
     : discountType === 'fixed' ? Math.max(0, basePrice - discVal) : basePrice
 
+  // Check if info is missing, but DON'T disable the button. We want to show an error instead.
   const infoMissing = switchingFromDaily && (!fullName.trim() || !phoneNumber.trim())
 
   const handleRenew = async () => {
     setError(null)
-    if (infoMissing) { setError('Please enter a name and phone number for this membership.'); return }
+    
+    // Explicitly check and show an error if they are switching from daily but forgot the info
+    if (infoMissing) { 
+      setError('Please enter a Full Name and Phone Number to upgrade from a Daily pass.'); 
+      return 
+    }
+    
     setLoading(true)
     let endDateStr
     if (isCustom) {
@@ -337,23 +344,21 @@ function RenewModal({ member, onClose, onSuccess }) {
     }
     
     // Create a NEW record instead of updating the old one. 
-    // This preserves the original membership row in the database.
     const newRecord = {
       first_name: member.first_name,
       last_name: member.last_name,
       phone_number: member.phone_number,
-      description: member.description, // Carry over notes
+      description: member.description, 
       subscription_type: subscriptionType, 
       base_price: basePrice,
+      // Safely handle discount type to prevent database enum errors
       discount_type: discountType, 
-      discount_value: discVal,
+      discount_value: discountType === 'none' ? 0 : discVal,
       amount_paid: amountPaid, 
       start_date: startDate, 
       end_date: endDateStr,
       renewal_count: (member.renewal_count || 0) + 1,
       last_payment_at: new Date().toISOString(),
-      // 'membership_status' REMOVED: It's a generated column in Supabase, 
-      // so the database handles it automatically based on the renewal_count.
     }
 
     // Handle daily switch where contact info is newly added
@@ -366,9 +371,14 @@ function RenewModal({ member, onClose, onSuccess }) {
 
     const { error: err } = await supabase.from('members').insert([newRecord])
     setLoading(false)
-    if (err) { setError(err.message); return }
+    
+    if (err) { 
+      setError(err.message); 
+      return 
+    }
     onSuccess()
   }
+  
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
@@ -379,30 +389,35 @@ function RenewModal({ member, onClose, onSuccess }) {
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
+        
         {error && <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>}
+        
         {switchingFromDaily && (
           <div className="mb-4 p-3 bg-electric-blue/10 border border-electric-blue/30 rounded-lg text-electric-blue text-sm">
             Switching from Daily — $7 discount applied automatically, and this membership now needs a name and phone number.
           </div>
         )}
+        
         {!_alreadyExpired && _currentEndForRenewal && (
           <div className="mb-4 p-3 bg-electric-green/10 border border-electric-green/30 rounded-lg text-electric-green text-sm">
             Early renewal — current plan is still active until {new Date(_currentEndForRenewal).toLocaleDateString()}. The new period starts the day after ({new Date(startDate).toLocaleDateString()}), so no days are lost.
           </div>
         )}
+        
         <div className="space-y-4">
           {switchingFromDaily && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Full Name</label>
+                <label className="block text-sm text-slate-400 mb-1">Full Name *</label>
                 <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} required placeholder="e.g. John Smith" className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600" />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Phone Number</label>
-                <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+                <label className="block text-sm text-slate-400 mb-1">Phone Number *</label>
+                <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} required placeholder="e.g. 03123456" className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600" />
               </div>
             </div>
           )}
+          
           <div>
             <label className="block text-sm text-slate-400 mb-1">Subscription Type</label>
             <select value={subscriptionType} onChange={e => setSubscriptionType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
@@ -415,6 +430,7 @@ function RenewModal({ member, onClose, onSuccess }) {
               <option value="custom">Custom</option>
             </select>
           </div>
+          
           <div className={`grid gap-4 ${isCustom ? 'grid-cols-3' : 'grid-cols-1'}`}>
             <div>
               <label className="block text-sm text-slate-400 mb-1">New Start Date</label>
@@ -431,6 +447,7 @@ function RenewModal({ member, onClose, onSuccess }) {
               </div>
             </>)}
           </div>
+          
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-400 mb-1">Discount Type</label>
@@ -445,14 +462,17 @@ function RenewModal({ member, onClose, onSuccess }) {
               <input type="number" value={discountValue} onChange={e => setDiscountValue(e.target.value)} disabled={discountType === 'none'} min="0" step="0.01" className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white disabled:opacity-50" />
             </div>
           </div>
+          
           <div className="bg-navy-900 p-4 rounded-lg flex justify-between items-center">
             <span className="text-slate-400 text-sm">Amount to Collect</span>
             <span className="text-2xl font-bold text-electric-green">${amountPaid.toFixed(2)}</span>
           </div>
         </div>
+        
         <div className="flex justify-end gap-3 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Cancel</button>
-          <button onClick={handleRenew} disabled={loading || (isCustom && !customEndDate) || infoMissing} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm">
+          {/* Removed infoMissing from disabled so the user can click and trigger the error message */}
+          <button onClick={handleRenew} disabled={loading || (isCustom && !customEndDate)} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm">
             <RefreshCw size={15} /> {loading ? 'Renewing…' : 'Confirm Renewal'}
           </button>
         </div>
@@ -460,7 +480,6 @@ function RenewModal({ member, onClose, onSuccess }) {
     </div>
   )
 }
-
 // ─── SMS Modal ────────────────────────────────────────────────────────────────
 
 function SmsModal({ members, onClose }) {
