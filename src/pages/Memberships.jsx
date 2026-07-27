@@ -359,6 +359,10 @@ function RenewModal({ member, onClose, onSuccess }) {
       end_date: endDateStr,
       renewal_count: (member.renewal_count || 0) + 1,
       last_payment_at: new Date().toISOString(),
+      
+      // ─── ADD THIS LINE ──────────────────────────────────
+      // If the membership being renewed was 'daily', mark it as true in the database
+      was_daily: member.subscription_type === 'daily',
     }
 
     // Handle daily switch where contact info is newly added
@@ -377,8 +381,7 @@ function RenewModal({ member, onClose, onSuccess }) {
       return 
     }
     onSuccess()
-  }
-  
+  }  
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
