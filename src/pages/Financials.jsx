@@ -241,11 +241,12 @@ function UpgradedMembersModal({ onClose }) {
 
       const allRecords = [...membersData, ...classesData]
         .filter(r => {
-          if (!r.start_date) return false
-          const d = localDateKey(new Date(r.start_date))
+          const dateStr = r.last_payment_at || r.created_at
+          if (!dateStr) return false
+          const d = localDateKey(new Date(dateStr))
           return d >= range.start && d <= range.end
         })
-        .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
+        .sort((a, b) => new Date(b.last_payment_at || b.created_at) - new Date(a.last_payment_at || a.created_at))
 
       setRecords(allRecords)
       setLoading(false)
@@ -314,7 +315,7 @@ function UpgradedMembersModal({ onClose }) {
                     </td>
                     <td className="p-4 text-slate-400 text-sm">{r.phone_number || '—'}</td>
                     <td className="p-4 text-slate-300 capitalize text-sm">{r.sub_type}</td>
-                    <td className="p-4 text-slate-400 text-sm">{r.start_date ? new Date(r.start_date).toLocaleDateString() : '—'}</td>
+                    <td className="p-4 text-slate-400 text-sm">{r.last_payment_at ? new Date(r.last_payment_at).toLocaleDateString() : (r.created_at ? new Date(r.created_at).toLocaleDateString() : '—')}</td>
                     <td className="p-4 text-electric-green font-semibold">${r.amount_paid}</td>
                     <td className="p-4 text-slate-400 text-sm">{r.renewal_count || 0}</td>
                   </tr>
@@ -386,8 +387,9 @@ export default function Financials() {
     const membersData = membersRes.data || []
     const classesData = classesRes.data || []
 
-    const filteredMembers = membersData.filter(m => inRange(m.created_at))
-    const filteredClasses = classesData.filter(c => inRange(c.created_at))
+    // Use last_payment_at for renewals, fallback to created_at for older records
+    const filteredMembers = membersData.filter(m => inRange(m.last_payment_at || m.created_at))
+    const filteredClasses = classesData.filter(c => inRange(c.last_payment_at || c.created_at))
 
     const gymTotal = filteredMembers.reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
     const gymDaily = filteredMembers.filter(m => m.subscription_type === 'daily').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
@@ -406,11 +408,11 @@ export default function Financials() {
 
     const mappedMembers = filteredMembers.map(m => ({
       id: `gym-${m.id}`, type: 'Gym', name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in',
-      sub_type: m.subscription_type, amount: m.amount_paid, created_at: m.created_at
+      sub_type: m.subscription_type, amount: m.amount_paid, created_at: m.last_payment_at || m.created_at
     }))
     const mappedClasses = filteredClasses.map(c => ({
       id: `cls-${c.id}`, type: 'Class', name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in',
-      sub_type: `${c.class_type} (${c.subscription_type})`, amount: c.amount_paid, created_at: c.created_at
+      sub_type: `${c.class_type} (${c.subscription_type})`, amount: c.amount_paid, created_at: c.last_payment_at || c.created_at
     }))
     const mergedRecent = [...mappedMembers, ...mappedClasses]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
