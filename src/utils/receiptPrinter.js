@@ -57,9 +57,9 @@ function buildReceiptText(member, familyMembers = []) {
     
     familyMembers.forEach((fm, index) => {
       const fmName = `${fm.first_name || ''} ${fm.last_name || ''}`.trim() || 'Unknown'
-      lines.push(`Name ${index + 1}: ${fmName}`)
+      lines.push(`name ${index + 1}: ${fmName}`)
       if (fm.phone_number) {
-        lines.push(`Phone ${index + 1}: ${fm.phone_number}`)
+        lines.push(`phone ${index + 1}: ${fm.phone_number}`)
       }
     })
     
@@ -70,13 +70,14 @@ function buildReceiptText(member, familyMembers = []) {
     if (member.phone_number) lines.push(`Phone: ${member.phone_number}`)
   }
   
+  // ─── Regular Format Continues ──────────────────────────────
   if (member.class_type) lines.push(`Class: ${capitalize(member.class_type)}`)
   lines.push(`Plan:  ${capitalize(member.subscription_type)}`)
   lines.push(ruleLine('-'))
   lines.push(labelValueLine('Start:', formatDate(member.start_date)))
   lines.push(labelValueLine('End:', formatDate(member.end_date)))
   
-  // Print description/notes if they exist (helps if they type names here instead)
+  // Print description/notes if they exist
   if (member.description) {
     lines.push('Notes:')
     const desc = member.description
@@ -175,7 +176,6 @@ export async function printReceiptViaRawBT(member) {
   let familyMembers = []
 
   // If it's a family plan, fetch all members sharing the EXACT same start_date and end_date
-  // This links family members together reliably without needing a member_uid
   if (member.subscription_type === 'family') {
     try {
       let query = supabase.from('members').select('first_name, last_name, phone_number')
