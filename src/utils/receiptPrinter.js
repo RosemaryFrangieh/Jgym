@@ -66,20 +66,20 @@ function buildReceiptText(member, familyMembers = []) {
     lines.push(ruleLine('-'))
   } else {
     // Standard single member info
-    lines.push(`Name:  ${classMemberDisplayName(member)}`)
-    if (member.phone_number) lines.push(`Phone: ${member.phone_number}`)
+    lines.push(`name 1: ${classMemberDisplayName(member)}`)
+    if (member.phone_number) lines.push(`phone 1: ${member.phone_number}`)
   }
   
   // ─── Regular Format Continues ──────────────────────────────
-  if (member.class_type) lines.push(`Class: ${capitalize(member.class_type)}`)
-  lines.push(`Plan:  ${capitalize(member.subscription_type)}`)
+  if (member.class_type) lines.push(`class: ${capitalize(member.class_type)}`)
+  lines.push(`plan: ${capitalize(member.subscription_type)}`)
   lines.push(ruleLine('-'))
-  lines.push(labelValueLine('Start:', formatDate(member.start_date)))
-  lines.push(labelValueLine('End:', formatDate(member.end_date)))
+  lines.push(labelValueLine('start:', formatDate(member.start_date)))
+  lines.push(labelValueLine('end:', formatDate(member.end_date)))
   
   // Print description/notes if they exist
   if (member.description) {
-    lines.push('Notes:')
+    lines.push('notes:')
     const desc = member.description
     for (let i = 0; i < desc.length; i += RECEIPT_WIDTH) {
       lines.push(desc.substring(i, i + RECEIPT_WIDTH))
@@ -87,16 +87,16 @@ function buildReceiptText(member, familyMembers = []) {
     lines.push(ruleLine('-'))
   }
 
-  lines.push(labelValueLine('Base Price:', formatMoney(member.base_price)))
+  lines.push(labelValueLine('base price:', formatMoney(member.base_price)))
   if (member.discount_type && member.discount_type !== 'none') {
     const discountLabel =
       member.discount_type === 'percentage'
         ? `${member.discount_value}%`
         : formatMoney(member.discount_value)
-    lines.push(labelValueLine('Discount:', discountLabel))
+    lines.push(labelValueLine('discount:', discountLabel))
   }
   lines.push(ruleLine('-'))
-  lines.push(labelValueLine('TOTAL PAID:', formatMoney(member.amount_paid)))
+  lines.push(labelValueLine('total paid:', formatMoney(member.amount_paid)))
   lines.push(ruleLine('='))
   lines.push('')
   lines.push(centerLine('Thank you!'))
