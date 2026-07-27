@@ -140,15 +140,37 @@ function MembershipStatusBadge({ status }) {
 // ─── Detail Modal ─────────────────────────────────────────────────────────────
 
 function DetailModal({ member, onClose, onRenew }) {
+  const [history, setHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
+  
   const endDate = computeEndDate(member)
   const state = getMembershipState(member)
   const expired = state === 'expired'
   const pending = state === 'pending'
   const fmt = (d) => d ? new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '—'
 
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setLoadingHistory(true)
+      let query = supabase.from('members').select('*').order('last_payment_at', { ascending: false })
+      
+      // Fetch history by phone number, or by name if phone is missing
+      if (member.phone_number) {
+        query = query.eq('phone_number', member.phone_number)
+      } else {
+        query = query.eq('first_name', member.first_name).eq('last_name', member.last_name)
+      }
+      
+      const { data, error } = await query
+      if (!error) setHistory(data || [])
+      setLoadingHistory(false)
+    }
+    fetchHistory()
+  }, [member])
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
+      <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-start mb-6">
           <div>
             <h3 className="text-xl font-bold text-white">{memberDisplayName(member)}</h3>
@@ -206,6 +228,10 @@ function DetailModal({ member, onClose, onRenew }) {
             <span className="text-slate-400 text-sm">Created</span>
             <span className="text-white text-sm">{fmt(member.created_at)}</span>
           </div>
+          <div className="flex justify-between items-center py-2 border-b border-navy-700">
+            <span className="text-slate-400 text-sm">Last Payment</span>
+            <span className="text-white text-sm">{fmt(member.last_payment_at || member.created_at)}</span>
+          </div>
           {member.description && (
             <div className="py-2">
               <span className="text-slate-400 text-sm block mb-1">Notes</span>
@@ -213,6 +239,42 @@ function DetailModal({ member, onClose, onRenew }) {
             </div>
           )}
         </div>
+
+        {/* ─── Membership History Timeline ─── */}
+        <div className="mb-5">
+          <h4 className="text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wide">Full Membership History</h4>
+          {loadingHistory ? (
+            <p className="text-slate-500 text-sm">Loading history...</p>
+          ) : history.length > 0 ? (
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+              {history.map((h) => {
+                const hEnd = computeEndDate(h)
+                const hState = getMembershipState(h)
+                return (
+                  <div key={h.id} className={`p-3 rounded-lg border flex items-center justify-between text-xs ${
+                    h.id === member.id ? 'border-electric-blue/50 bg-electric-blue/5' : 'border-navy-700 bg-navy-900'
+                  }`}>
+                    <div className="flex flex-col">
+                      <span className="text-white font-medium capitalize">{h.subscription_type}</span>
+                      <span className="text-slate-500">
+                        {h.start_date ? new Date(h.start_date).toLocaleDateString() : '—'} → {hEnd ? new Date(hEnd).toLocaleDateString() : '—'}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`font-semibold ${hState === 'expired' ? 'text-red-400' : hState === 'pending' ? 'text-yellow-400' : 'text-green-400'}`}>
+                        ${h.amount_paid}
+                      </span>
+                      {h.id === member.id && <span className="text-electric-blue font-bold text-[10px] uppercase">Current View</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <p className="text-slate-500 text-sm">No history available.</p>
+          )}
+        </div>
+
         <div className="flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
           <button onClick={() => printReceiptViaRawBT(member)} className="flex items-center gap-2 px-4 py-2 border border-navy-700 text-slate-300 hover:text-white hover:border-slate-500 rounded-lg font-medium text-sm transition-colors">
@@ -273,24 +335,40 @@ function RenewModal({ member, onClose, onSuccess }) {
       start.setDate(start.getDate() + durationMap[subscriptionType])
       endDateStr = start.toISOString().split('T')[0]
     }
-    const updatePayload = {
-      subscription_type: subscriptionType, base_price: basePrice,
-      discount_type: discountType, discount_value: discVal,
-      amount_paid: amountPaid, start_date: startDate, end_date: endDateStr,
+    
+    // Create a NEW record instead of updating the old one. 
+    // This preserves the original membership row in the database.
+    const newRecord = {
+      first_name: member.first_name,
+      last_name: member.last_name,
+      phone_number: member.phone_number,
+      description: member.description, // Carry over notes
+      subscription_type: subscriptionType, 
+      base_price: basePrice,
+      discount_type: discountType, 
+      discount_value: discVal,
+      amount_paid: amountPaid, 
+      start_date: startDate, 
+      end_date: endDateStr,
       renewal_count: (member.renewal_count || 0) + 1,
+      last_payment_at: new Date().toISOString(),
+      // 'membership_status' REMOVED: It's a generated column in Supabase, 
+      // so the database handles it automatically based on the renewal_count.
     }
+
+    // Handle daily switch where contact info is newly added
     if (switchingFromDaily) {
       const parts = fullName.trim().split(/\s+/).filter(Boolean)
-      updatePayload.first_name = parts[0] || ''
-      updatePayload.last_name = parts.slice(1).join(' ')
-      updatePayload.phone_number = phoneNumber.trim()
+      newRecord.first_name = parts[0] || ''
+      newRecord.last_name = parts.slice(1).join(' ')
+      newRecord.phone_number = phoneNumber.trim()
     }
-    const { error: err } = await supabase.from('members').update(updatePayload).eq('id', member.id)
+
+    const { error: err } = await supabase.from('members').insert([newRecord])
     setLoading(false)
     if (err) { setError(err.message); return }
     onSuccess()
   }
-
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
@@ -382,8 +460,6 @@ function RenewModal({ member, onClose, onSuccess }) {
     </div>
   )
 }
-
-// ─── SMS Modal ────────────────────────────────────────────────────────────────
 
 // ─── SMS Modal ────────────────────────────────────────────────────────────────
 
@@ -742,12 +818,15 @@ export default function Memberships() {
       ? { from: customRange.start, to: customRange.end }
       : monthBounds(selectedMonth)
 
+    // Filtering/ordering by last_payment_at (not created_at) so that a
+    // renewal's payment shows up in the month it was actually collected,
+    // and past months don't get silently rewritten when a member renews.
     let query = supabase
       .from('members')
       .select('*')
-      .gte('created_at', `${from}T00:00:00.000Z`)
-      .lte('created_at', `${to}T23:59:59.999Z`)
-      .order('created_at', { ascending: false })
+      .gte('last_payment_at', `${from}T00:00:00.000Z`)
+      .lte('last_payment_at', `${to}T23:59:59.999Z`)
+      .order('last_payment_at', { ascending: false })
 
     if (filters.subscriptionType !== 'all') {
       query = query.eq('subscription_type', filters.subscriptionType)
@@ -817,8 +896,8 @@ export default function Memberships() {
           <h2 className="text-2xl font-bold text-white">Memberships</h2>
           <p className="text-slate-400 text-sm mt-0.5">
             {isAdmin && rangeMode === 'custom'
-              ? `Showing records created ${customRange.start} → ${customRange.end}`
-              : `Showing records created in ${formatYearMonth(selectedMonth)}`}
+              ? `Showing payments collected ${customRange.start} → ${customRange.end}`
+              : `Showing payments collected in ${formatYearMonth(selectedMonth)}`}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -979,7 +1058,7 @@ export default function Memberships() {
                 <tr key={m.id} className={`border-b border-navy-700 transition-colors ${m._state === 'expired' ? 'bg-red-950/20 hover:bg-red-950/30' : m._state === 'pending' ? 'bg-yellow-950/20 hover:bg-yellow-950/30' : 'hover:bg-navy-900/50'}`}>
                   <td className="p-4">
                     <p className="text-white font-medium">{memberDisplayName(m)}</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{new Date(m.created_at).toLocaleDateString()}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">{new Date(m.last_payment_at || m.created_at).toLocaleDateString()}</p>
                   </td>
                   <td className="p-4 hidden md:table-cell text-slate-400 text-sm">{m.phone_number || '—'}</td>
                   <td className="p-4"><SubscriptionBadge type={m.subscription_type} /></td>

@@ -155,12 +155,18 @@ export default function MemberModal({ member, onClose }) {
       end_date: endDateObj.toISOString().split('T')[0]
     }
 ​
-    let result
-    if (member) {
-      result = await supabase.from('members').update(payload).eq('id', member.id)
-    } else {
-      result = await supabase.from('members').insert([payload])
-    }
+   let result
+if (member) {
+  // Editing an existing member's details isn't a new payment —
+  // don't touch last_payment_at here.
+  result = await supabase.from('members').update(payload).eq('id', member.id)
+} else {
+  // Brand new member = a payment was just collected right now.
+  result = await supabase.from('members').insert([{
+    ...payload,
+    last_payment_at: new Date().toISOString(),
+  }])
+}
 ​
     setLoading(false)
 ​

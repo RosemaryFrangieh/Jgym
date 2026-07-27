@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar, Dumbbell, Activity, UserCheck } from 'lucide-react'
+import { DollarSign, TrendingUp, Wallet, ShoppingBag, Package, BarChart2, Plus, Pencil, Trash2, X, Check, Calendar, Dumbbell, Activity, UserCheck, Receipt } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
 const COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
@@ -21,6 +21,7 @@ const localDateKey = (d) => {
   const day = String(dt.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+
 const todayKey = () => localDateKey(new Date())
 
 const FILTER_OPTIONS = [
@@ -114,6 +115,88 @@ function ItemModal({ item, onClose, onSave }) {
   )
 }
 
+function ExpenseModal({ expense, onClose, onSave }) {
+  const [form, setForm] = useState(
+    expense || { name: '', description: '', price: '', expense_date: todayKey() }
+  )
+  const [error, setError] = useState('')
+
+  const handleSubmit = () => {
+    if (!form.name.trim()) return setError('Expense name is required.')
+    if (!form.price || isNaN(parseFloat(form.price)) || parseFloat(form.price) < 0)
+      return setError('Enter a valid price.')
+    if (!form.expense_date) return setError('Date is required.')
+    setError('')
+    onSave({
+      ...form,
+      price: parseFloat(parseFloat(form.price).toFixed(2)),
+      description: form.description?.trim() || null,
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-navy-800 border border-navy-700 rounded-2xl w-full max-w-md mx-4 shadow-2xl">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-navy-700">
+          <h3 className="text-lg font-semibold text-white">{expense ? 'Edit Expense' : 'New Expense'}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={20} /></button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {error && <p className="text-red-400 text-sm bg-red-500/10 rounded-lg px-3 py-2">{error}</p>}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">Date</label>
+              <input
+                type="date"
+                className="w-full bg-navy-900 border border-navy-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-electric-blue transition-colors [color-scheme:dark]"
+                value={form.expense_date}
+                onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">Price ($)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full bg-navy-900 border border-navy-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-electric-blue transition-colors"
+                placeholder="0.00"
+                value={form.price}
+                onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-slate-400 text-sm mb-1">Name</label>
+            <input
+              className="w-full bg-navy-900 border border-navy-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-electric-blue transition-colors"
+              placeholder="e.g. Electricity bill"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-slate-400 text-sm mb-1">Description <span className="text-slate-500">(optional)</span></label>
+            <textarea
+              rows={3}
+              className="w-full bg-navy-900 border border-navy-700 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-electric-blue transition-colors resize-none"
+              placeholder="Add notes..."
+              value={form.description || ''}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            />
+          </div>
+        </div>
+        <div className="flex gap-3 px-6 py-4 border-t border-navy-700">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-lg border border-navy-600 text-slate-400 hover:text-white hover:border-navy-500 transition-colors text-sm font-medium">Cancel</button>
+          <button onClick={handleSubmit} className="flex-1 py-2.5 rounded-lg bg-electric-blue text-white font-medium text-sm hover:bg-blue-600 transition-colors flex items-center justify-center gap-2">
+            <Check size={16} /> {expense ? 'Save Changes' : 'Add Expense'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function UpgradedMembersModal({ onClose }) {
   const [filterType, setFilterType] = useState('day')
   const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
@@ -148,14 +231,14 @@ function UpgradedMembersModal({ onClose }) {
         supabase.from('members').select('*').eq('was_daily', true),
         supabase.from('class_members').select('*').eq('was_daily', true)
       ])
-      
+
       const membersData = (membersRes.data || []).map(m => ({
         ...m, category: 'Gym', name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in', sub_type: m.subscription_type
       }))
       const classesData = (classesRes.data || []).map(c => ({
         ...c, category: 'Class', name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in', sub_type: `${c.class_type} (${c.subscription_type})`
       }))
-      
+
       const allRecords = [...membersData, ...classesData]
         .filter(r => {
           if (!r.start_date) return false
@@ -163,7 +246,7 @@ function UpgradedMembersModal({ onClose }) {
           return d >= range.start && d <= range.end
         })
         .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))
-        
+
       setRecords(allRecords)
       setLoading(false)
     }
@@ -179,7 +262,7 @@ function UpgradedMembersModal({ onClose }) {
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={20} /></button>
         </div>
-        
+
         <div className="px-6 py-4 border-b border-navy-700 flex flex-wrap items-center gap-3">
           <div className="flex gap-1 bg-navy-900 rounded-lg p-1">
             {FILTER_OPTIONS.map(opt => (
@@ -202,7 +285,6 @@ function UpgradedMembersModal({ onClose }) {
             </div>
           )}
         </div>
-
         <div className="overflow-auto">
           <table className="w-full text-left">
             <thead className="bg-navy-900 border-b border-navy-700 text-slate-400 text-sm sticky top-0">
@@ -255,12 +337,17 @@ export default function Financials() {
   const [filterType, setFilterType] = useState('day')
   const [customRange, setCustomRange] = useState({ start: todayKey(), end: todayKey() })
   const [showUpgradedModal, setShowUpgradedModal] = useState(false)
-
   const [items, setItems] = useState([])
   const [rangeSales, setRangeSales] = useState([]) // rows: { item_id, quantity, sale_date } within current range
   const [showItemModal, setShowItemModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+
+  // Expenses state
+  const [expenses, setExpenses] = useState([])
+  const [showExpenseModal, setShowExpenseModal] = useState(false)
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [expenseDeleteConfirm, setExpenseDeleteConfirm] = useState(null)
 
   useEffect(() => { fetchShopItems() }, [])
 
@@ -296,7 +383,6 @@ export default function Financials() {
       supabase.from('members').select('*').order('created_at', { ascending: false }),
       supabase.from('class_members').select('*').order('created_at', { ascending: false })
     ])
-
     const membersData = membersRes.data || []
     const classesData = classesRes.data || []
 
@@ -309,30 +395,26 @@ export default function Financials() {
     const gymBiweekly = filteredMembers.filter(m => m.subscription_type === 'biweekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
     const gymTriweekly = filteredMembers.filter(m => m.subscription_type === 'triweekly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
     const gymMonthly = filteredMembers.filter(m => m.subscription_type === 'monthly').reduce((sum, m) => sum + parseFloat(m.amount_paid || 0), 0)
-
     const classesTotal = filteredClasses.reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
     const classDaily = filteredClasses.filter(c => c.subscription_type === 'daily').reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
     const classMonthly = filteredClasses.filter(c => c.subscription_type === 'monthly').reduce((sum, c) => sum + parseFloat(c.amount_paid || 0), 0)
 
-    setStats({ 
-      gymTotal, gymDaily, gymWeekly, gymBiweekly, gymTriweekly, gymMonthly, 
-      classesTotal, classDaily, classMonthly 
+    setStats({
+      gymTotal, gymDaily, gymWeekly, gymBiweekly, gymTriweekly, gymMonthly,
+      classesTotal, classDaily, classMonthly
     })
 
     const mappedMembers = filteredMembers.map(m => ({
       id: `gym-${m.id}`, type: 'Gym', name: `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Walk-in',
       sub_type: m.subscription_type, amount: m.amount_paid, created_at: m.created_at
     }))
-
     const mappedClasses = filteredClasses.map(c => ({
       id: `cls-${c.id}`, type: 'Class', name: `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Walk-in',
       sub_type: `${c.class_type} (${c.subscription_type})`, amount: c.amount_paid, created_at: c.created_at
     }))
-
     const mergedRecent = [...mappedMembers, ...mappedClasses]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 8)
-
     setRecent(mergedRecent)
   }
 
@@ -350,17 +432,30 @@ export default function Financials() {
     setRangeSales(data || [])
   }
 
+  const fetchExpenses = async () => {
+    const { data } = await supabase
+      .from('expenses')
+      .select('*')
+      .gte('expense_date', range.start)
+      .lte('expense_date', range.end)
+      .order('expense_date', { ascending: false })
+    setExpenses(data || [])
+  }
+
   useEffect(() => { fetchFinancials() }, [filterType, customRange.start, customRange.end])
   useEffect(() => { fetchShopSales() }, [filterType, customRange.start, customRange.end])
+  useEffect(() => { fetchExpenses() }, [filterType, customRange.start, customRange.end])
 
   const getSales = (id) => rangeSales.reduce((sum, row) => row.item_id === id ? sum + row.quantity : sum, 0)
-
   const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
   const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
   const totalItemsSold = items.reduce((sum, item) => sum + getSales(item.id), 0)
-  
+
   const totalSubscriptionsRevenue = stats.gymTotal + stats.classesTotal
   const grandTotal = totalSubscriptionsRevenue + totalItemRevenue
+
+  const totalExpenses = expenses.reduce((sum, e) => sum + parseFloat(e.price || 0), 0)
+  const netTotal = grandTotal - totalExpenses
 
   const handleSaveItem = async (data) => {
     const { id: _id, created_at: _created_at, ...payload } = data
@@ -383,6 +478,26 @@ export default function Financials() {
     setDeleteConfirm(null)
   }
 
+  const handleSaveExpense = async (data) => {
+    const { id: _id, created_at: _created_at, updated_at: _updated_at, ...payload } = data
+    if (editingExpense) {
+      const { error } = await supabase.from('expenses').update(payload).eq('id', editingExpense.id)
+      if (!error) setExpenses(prev => prev.map(e => e.id === editingExpense.id ? { ...e, ...payload } : e))
+    } else {
+      const { data: inserted, error } = await supabase.from('expenses').insert(payload).select().single()
+      // only show it immediately if it falls inside the active range
+      if (!error && inserted && inserted.expense_date >= range.start && inserted.expense_date <= range.end)
+        setExpenses(prev => [inserted, ...prev])
+    }
+    setShowExpenseModal(false); setEditingExpense(null)
+  }
+
+  const handleDeleteExpense = async (id) => {
+    const { error } = await supabase.from('expenses').delete().eq('id', id)
+    if (!error) setExpenses(prev => prev.filter(e => e.id !== id))
+    setExpenseDeleteConfirm(null)
+  }
+
   const pieData = [
     { name: 'Gym Subscriptions', value: stats.gymTotal },
     { name: 'Classes', value: stats.classesTotal },
@@ -399,8 +514,8 @@ export default function Financials() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 className="text-2xl font-bold text-white">Financial Overview</h2>
         <div className="flex items-center gap-3">
-          <button 
-            onClick={() => setShowUpgradedModal(true)} 
+          <button
+            onClick={() => setShowUpgradedModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold text-sm hover:bg-purple-600 transition-colors"
           >
             <UserCheck size={16} /> Review Daily Upgraded
@@ -475,6 +590,26 @@ export default function Financials() {
         </div>
       </div>
 
+      {/* Net Profit Card */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+          <div className="p-3 bg-red-500/10 rounded-lg text-red-400"><Receipt size={28} /></div>
+          <div>
+            <p className="text-slate-400 text-sm">Total Expenses</p>
+            <h3 className="text-2xl font-bold text-red-400">-${totalExpenses.toFixed(2)}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">{expenses.length} expense{expenses.length !== 1 ? 's' : ''} in range</p>
+          </div>
+        </div>
+        <div className="bg-navy-800 p-6 rounded-xl border border-navy-700 flex items-center gap-4">
+          <div className={`p-3 rounded-lg ${netTotal >= 0 ? 'bg-electric-green/10 text-electric-green' : 'bg-red-500/10 text-red-400'}`}><TrendingUp size={28} /></div>
+          <div>
+            <p className="text-slate-400 text-sm">Net Profit</p>
+            <h3 className={`text-2xl font-bold ${netTotal >= 0 ? 'text-electric-green' : 'text-red-400'}`}>${netTotal.toFixed(2)}</h3>
+            <p className="text-slate-500 text-xs mt-0.5">Revenue − Expenses (in range)</p>
+          </div>
+        </div>
+      </div>
+
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
@@ -493,7 +628,6 @@ export default function Financials() {
             </ResponsiveContainer>
           )}
         </div>
-
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><BarChart2 size={20} /> Shop Items Revenue</h3>
           {items.length === 0 ? (
@@ -544,7 +678,6 @@ export default function Financials() {
             ))}
           </div>
         </div>
-
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4">Recent Transactions</h3>
           <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
@@ -579,7 +712,6 @@ export default function Financials() {
             <Plus size={17} /> Add Item
           </button>
         </div>
-
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="p-4 bg-navy-900 rounded-full mb-4"><Package size={36} className="text-slate-600" /></div>
@@ -636,6 +768,74 @@ export default function Financials() {
         )}
       </div>
 
+      {/* ── Expenses Section ── */}
+      <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-navy-700">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-500/10 rounded-lg text-red-400"><Receipt size={22} /></div>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Expenses</h3>
+              <p className="text-slate-500 text-sm">{expenses.length} expense{expenses.length !== 1 ? 's' : ''} · ${totalExpenses.toFixed(2)} in range</p>
+            </div>
+          </div>
+          <button onClick={() => { setEditingExpense(null); setShowExpenseModal(true) }} className="flex items-center gap-2 px-4 py-2.5 bg-red-500 text-white font-semibold rounded-lg text-sm hover:bg-red-600 transition-all">
+            <Plus size={17} /> Add Expense
+          </button>
+        </div>
+
+        {expenses.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="p-4 bg-navy-900 rounded-full mb-4"><Receipt size={36} className="text-slate-600" /></div>
+            <p className="text-slate-400 font-medium">No expenses in this range</p>
+            <p className="text-slate-600 text-sm mt-1">Add an expense to start tracking</p>
+          </div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="w-full text-left">
+              <thead className="bg-navy-900 border-b border-navy-700 text-slate-400 text-sm">
+                <tr>
+                  <th className="p-4">Date</th>
+                  <th className="p-4">Name</th>
+                  <th className="p-4">Description</th>
+                  <th className="p-4 text-right">Price</th>
+                  <th className="p-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map(e => (
+                  <tr key={e.id} className="border-b border-navy-700 hover:bg-navy-900/50 group">
+                    <td className="p-4 text-slate-400 text-sm">{new Date(e.expense_date).toLocaleDateString()}</td>
+                    <td className="p-4 text-white font-medium">{e.name}</td>
+                    <td className="p-4 text-slate-400 text-sm">{e.description || '—'}</td>
+                    <td className="p-4 text-right text-red-400 font-semibold">-${parseFloat(e.price).toFixed(2)}</td>
+                    <td className="p-4">
+                      <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => { setEditingExpense(e); setShowExpenseModal(true) }} className="p-1.5 rounded-lg text-slate-500 hover:text-electric-blue hover:bg-electric-blue/10 transition-colors"><Pencil size={14} /></button>
+                        {expenseDeleteConfirm === e.id ? (
+                          <>
+                            <button onClick={() => handleDeleteExpense(e.id)} className="px-2 py-1 rounded-lg text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium">Confirm</button>
+                            <button onClick={() => setExpenseDeleteConfirm(null)} className="px-2 py-1 rounded-lg text-xs border border-navy-600 text-slate-400 hover:text-white transition-colors">Cancel</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setExpenseDeleteConfirm(e.id)} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-navy-900/50">
+                  <td className="p-4 text-slate-400 font-medium" colSpan={3}>Total</td>
+                  <td className="p-4 text-right text-red-400 font-bold">-${totalExpenses.toFixed(2)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
       {showItemModal && (
         <ItemModal
           item={editingItem}
@@ -643,7 +843,13 @@ export default function Financials() {
           onSave={handleSaveItem}
         />
       )}
-
+      {showExpenseModal && (
+        <ExpenseModal
+          expense={editingExpense}
+          onClose={() => { setShowExpenseModal(false); setEditingExpense(null) }}
+          onSave={handleSaveExpense}
+        />
+      )}
       {showUpgradedModal && <UpgradedMembersModal onClose={() => setShowUpgradedModal(false)} />}
     </div>
   )
