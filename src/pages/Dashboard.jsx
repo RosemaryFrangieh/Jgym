@@ -38,6 +38,17 @@ const localDateKey = (d) => {
   return `${y}-${m}-${day}`
 }
 const todayKey = () => localDateKey(new Date())
+
+// Parses a 'YYYY-MM-DD' (date-only) value from the DB into a LOCAL midnight Date.
+// `new Date('YYYY-MM-DD')` parses as UTC midnight, which drifts against locally
+// -zeroed comparison dates depending on the browser's timezone offset — this
+// avoids that mismatch so a member never flips in/out of "expiring soon" just
+// because of where the device's clock is set.
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null
+  const [y, m, d] = String(dateStr).split('T')[0].split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
 ​
 export default function Dashboard() {
   const { user } = useAuth()
@@ -90,11 +101,11 @@ export default function Dashboard() {
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     const { data: members } = await supabase.from('members').select('*')
     if (members) {
-      const active = members.filter(m => new Date(m.end_date) >= today)
-      const newThisMonth = members.filter(m => new Date(m.start_date) >= startOfMonth)
+      const active = members.filter(m => parseLocalDate(m.end_date) >= today)
+      const newThisMonth = members.filter(m => parseLocalDate(m.start_date) >= startOfMonth)
       const expiring = members.filter(m => {
-        const e = new Date(m.end_date)
-        return e >= today && e <= twoDaysFromNow && m.subscription_type !== 'daily'
+        const e = parseLocalDate(m.end_date)
+        return e && e >= today && e <= twoDaysFromNow && m.subscription_type !== 'daily'
       })
       setStats({ total: members.length, active: active.length, newThisMonth: newThisMonth.length, expiring })
       setChartData([
@@ -112,8 +123,8 @@ export default function Dashboard() {
 ​
   const getDaysRemaining = (endDate) => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
-    const end = new Date(endDate); end.setHours(0, 0, 0, 0)
-    return Math.ceil((end - today) / (1000 * 60 * 60 * 24))
+    const end = parseLocalDate(endDate)
+    return Math.round((end - today) / (1000 * 60 * 60 * 24))
   }
   const getDaysColor = (d) => d === 0 ? 'text-red-500' : d === 1 ? 'text-red-400' : d === 2 ? 'text-orange-400' : 'text-yellow-400'
   const getDaysLabel = (d) => d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `${d} days`
