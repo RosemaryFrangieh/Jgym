@@ -4,6 +4,7 @@ import MemberModal from '../components/MemberModal'
 import { useAuth } from '../context/AuthContext'
 import { Users, UserPlus, AlertTriangle, Calendar, RefreshCw, ShoppingBag, ShoppingCart, Plus, Minus, MessageCircle, Check, Trash2, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { computeEndDate } from './Memberships'
 ​
 const TABLE_COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
 const UNIT_LABEL = { piece: 'units', kg: 'kg', liter: 'L', session: 'sessions', month: 'months' }
@@ -26,7 +27,7 @@ const toWhatsAppNumber = (raw) => {
 // The pre-filled reminder message — edit the wording however you like
 const buildReminderMessage = (m, daysLabel) => {
   const name = `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'there'
-  const endDate = new Date(m.end_date).toLocaleDateString()
+  const endDate = new Date(computeEndDate(m)).toLocaleDateString()
   return `Hello ${name}, this is a friendly reminder from ${GYM_NAME}. Your ${m.subscription_type} membership expires on ${endDate} (${daysLabel.toLowerCase()}). Please renew to keep your access with no interruption. See you at the gym! 💪`
 }
 ​
@@ -73,6 +74,16 @@ export default function Dashboard() {
   })
 ​
   useEffect(() => { fetchDashboardData(); fetchShopData() }, [])
+
+  // Membership stats (esp. "Expiring Soon") depend on today's date, so a tab left
+  // open across midnight — common on a reception PC — needs to keep refetching
+  // rather than showing whatever "today" it happened to load on.
+  useEffect(() => {
+    const onFocus = () => fetchDashboardData()
+    window.addEventListener('focus', onFocus)
+    const interval = setInterval(fetchDashboardData, 5 * 60 * 1000) // every 5 minutes
+    return () => { window.removeEventListener('focus', onFocus); clearInterval(interval) }
+  }, [])
 ​
   // Keep shop data fresh if the Financials page (or another tab) added/edited items
   useEffect(() => {
@@ -101,10 +112,10 @@ export default function Dashboard() {
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     const { data: members } = await supabase.from('members').select('*')
     if (members) {
-      const active = members.filter(m => parseLocalDate(m.end_date) >= today)
+      const active = members.filter(m => parseLocalDate(computeEndDate(m)) >= today)
       const newThisMonth = members.filter(m => parseLocalDate(m.start_date) >= startOfMonth)
       const expiring = members.filter(m => {
-        const e = parseLocalDate(m.end_date)
+        const e = parseLocalDate(computeEndDate(m))
         return e && e >= today && e <= twoDaysFromNow && m.subscription_type !== 'daily'
       })
       setStats({ total: members.length, active: active.length, newThisMonth: newThisMonth.length, expiring })
@@ -130,13 +141,13 @@ export default function Dashboard() {
   const getDaysLabel = (d) => d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `${d} days`
 ​
   // ─── WhatsApp reminder helpers ───────────────────────────────────────────────
-  const reminderKey = (m) => `${m.id}:${localDateKey(m.end_date)}`
+  const reminderKey = (m) => `${m.id}:${localDateKey(computeEndDate(m))}`
   const isReminderSent = (m) => Boolean(sentReminders[reminderKey(m)])
 ​
   const sendWhatsApp = (m) => {
     const number = toWhatsAppNumber(m.phone_number)
     if (!number) { alert('This member has no valid phone number saved.'); return }
-    const daysLabel = getDaysLabel(getDaysRemaining(m.end_date))
+    const daysLabel = getDaysLabel(getDaysRemaining(computeEndDate(m)))
     const text = encodeURIComponent(buildReminderMessage(m, daysLabel))
     window.open(`https://wa.me/${number}?text=${text}`, '_blank')
     // Mark this membership cycle as reminded and persist it
@@ -242,7 +253,7 @@ export default function Dashboard() {
             {stats.expiring.length === 0 ? (
               <p className="text-slate-500 text-center py-8">No memberships expiring soon.</p>
             ) : stats.expiring.map(m => {
-              const daysLeft = getDaysRemaining(m.end_date)
+              const daysLeft = getDaysRemaining(computeEndDate(m))
               const sent = isReminderSent(m)
               return (
                 <div key={m.id} className="flex justify-between items-center bg-navy-900 p-3 rounded-lg">
