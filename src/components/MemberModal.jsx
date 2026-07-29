@@ -3,15 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { X, Printer, Check, Plus } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
-​
-const FIXED_PRICES = {
-  daily: 7,
-  weekly: 17,
-  biweekly: 25,
-  triweekly: 32,
-  monthly: 40,
-  family: 100
-}
+import { useSettings } from '../context/SettingsContext'
 ​
 // Family plans store their 3 member names + phone numbers inside the description
 // field, structured so we can parse them back when editing.
@@ -37,6 +29,8 @@ function parseFamilyDescription(description) {
 }
 ​
 export default function MemberModal({ member, onClose }) {
+  const { settings } = useSettings()
+  const FIXED_PRICES = settings.membershipPrices
   const [fullName, setFullName] = useState('')
   const [formData, setFormData] = useState({
     first_name: '', last_name: '', phone_number: '', description: '',

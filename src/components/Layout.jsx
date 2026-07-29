@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, DollarSign, Dumbbell, LogOut, UserCog, ShieldCheck, Activity } from 'lucide-react'
+import { LayoutDashboard, Users, DollarSign, Dumbbell, LogOut, UserCog, ShieldCheck, Activity, Settings } from 'lucide-react'
 import { useAuth, ALL_PAGES } from '../context/AuthContext'
 ​
 const PAGE_ICONS = {
@@ -7,6 +7,7 @@ const PAGE_ICONS = {
   '/memberships': Users,
   '/classes': Activity,
   '/financials': DollarSign,
+  '/settings': Settings,
 }
 ​
 // Vertical item used in the desktop sidebar

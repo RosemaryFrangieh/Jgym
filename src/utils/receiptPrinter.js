@@ -1,9 +1,55 @@
 // receiptPrinter.js
+
 import { supabase } from '../supabaseClient'
 
 const RECEIPT_WIDTH = 32
 
-const INSTAGRAM_URL = 'https://www.instagram.com/your_gym_handle'
+// ─── Default receipt template (exported so SettingsContext can reuse) ────────
+
+export const DEFAULT_RECEIPT_TEMPLATE = {
+  // Header
+  headerTitle: '{gymName}',
+  headerSubtitle: 'Membership Receipt',
+
+  // Family plan section
+  familySectionTitle: 'Family Plan Members',
+  familyNameFormat: 'name {n}',
+  familyPhoneFormat: 'phone {n}',
+  showFamilyPhones: true,
+  familySeparator: 'dash', // 'none' | 'blank' | 'dash'
+
+  // Single member labels
+  singleNameLabel: 'name 1',
+  singlePhoneLabel: 'phone 1',
+  showSinglePhone: true,
+
+  // Field labels (inline = "label: value", aligned = right-aligned value)
+  classLabel: 'class:',
+  planLabel: 'plan:',
+  startLabel: 'start:',
+  endLabel: 'end:',
+  notesLabel: 'notes:',
+  basePriceLabel: 'base price:',
+  discountLabel: 'discount:',
+  totalPaidLabel: 'total paid:',
+
+  // Footer
+  footerMessage: 'Thank you!',
+  instagramCaption: 'Follow us on Instagram',
+  instagramUrl: 'https://www.instagram.com/your_gym_handle',
+  showInstagramQR: true,
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fillTemplate(str, vars) {
+  if (!str) return ''
+  let result = str
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value ?? '')
+  }
+  return result
+}
 
 function classMemberDisplayName(member) {
   const name = `${member.first_name || ''} ${member.last_name || ''}`.trim()
@@ -43,43 +89,77 @@ function labelValueLine(label, value, width = RECEIPT_WIDTH) {
   return `${label}${' '.repeat(gap)}${value}`
 }
 
-function buildReceiptText(member, familyMembers = []) {
+// ─── Build receipt text from template ────────────────────────────────────────
+
+/**
+ * @param {object} member - The member record
+ * @param {array}  familyMembers - Family plan members (empty for non-family)
+ * @param {object} settings - { gymName, receiptTemplate }
+ */
+export function buildReceiptText(member, familyMembers = [], settings = {}) {
+  const gymName = settings.gymName || 'J-GYM'
+  const tpl = { ...DEFAULT_RECEIPT_TEMPLATE, ...(settings.receiptTemplate || {}) }
+
   const lines = []
 
-  lines.push(centerLine('J-GYM'))
-  lines.push(centerLine('Membership Receipt'))
+  // ─── Header ──────────────────────────────────────────────
+  const headerTitle = fillTemplate(tpl.headerTitle, { gymName })
+  if (headerTitle) lines.push(centerLine(headerTitle))
+  if (tpl.headerSubtitle) lines.push(centerLine(tpl.headerSubtitle))
   lines.push(ruleLine('='))
-  
-  // ─── Family Plan Multiple Names & Phones ───────────────────
+
+  // ─── Family Plan Members OR Single Member ────────────────
   if (member.subscription_type === 'family' && familyMembers.length > 0) {
-    lines.push(centerLine('Family Plan Members'))
-    lines.push(ruleLine('-'))
-    
+    if (tpl.familySectionTitle) {
+      lines.push(centerLine(tpl.familySectionTitle))
+      lines.push(ruleLine('-'))
+    }
+
     familyMembers.forEach((fm, index) => {
+      const n = index + 1
       const fmName = `${fm.first_name || ''} ${fm.last_name || ''}`.trim() || 'Unknown'
-      lines.push(`name ${index + 1}: ${fmName}`)
-      if (fm.phone_number) {
-        lines.push(`phone ${index + 1}: ${fm.phone_number}`)
+      lines.push(`${fillTemplate(tpl.familyNameFormat, { n, name: fmName })}: ${fmName}`)
+
+      if (tpl.showFamilyPhones && fm.phone_number) {
+        lines.push(`${fillTemplate(tpl.familyPhoneFormat, { n, phone: fm.phone_number })}: ${fm.phone_number}`)
+      }
+
+      // Separator between members (not after the last one)
+      if (index < familyMembers.length - 1) {
+        if (tpl.familySeparator === 'dash') {
+          lines.push(ruleLine('-'))
+        } else if (tpl.familySeparator === 'blank') {
+          lines.push('')
+        }
       }
     })
-    
+
     lines.push(ruleLine('-'))
   } else {
-    // Standard single member info
-    lines.push(`name 1: ${classMemberDisplayName(member)}`)
-    if (member.phone_number) lines.push(`phone 1: ${member.phone_number}`)
+    // Single member
+    const displayName = classMemberDisplayName(member)
+    const nameLabel = fillTemplate(tpl.singleNameLabel, { gymName })
+    lines.push(`${nameLabel}: ${displayName}`)
+
+    if (tpl.showSinglePhone && member.phone_number) {
+      lines.push(`${tpl.singlePhoneLabel}: ${member.phone_number}`)
+    }
   }
-  
-  // ─── Regular Format Continues ──────────────────────────────
-  if (member.class_type) lines.push(`class: ${capitalize(member.class_type)}`)
-  lines.push(`plan: ${capitalize(member.subscription_type)}`)
+
+  // ─── Class & Plan ────────────────────────────────────────
+  if (member.class_type) {
+    lines.push(`${tpl.classLabel} ${capitalize(member.class_type)}`)
+  }
+  lines.push(`${tpl.planLabel} ${capitalize(member.subscription_type)}`)
   lines.push(ruleLine('-'))
-  lines.push(labelValueLine('start:', formatDate(member.start_date)))
-  lines.push(labelValueLine('end:', formatDate(member.end_date)))
-  
-  // Print description/notes if they exist
+
+  // ─── Dates ───────────────────────────────────────────────
+  lines.push(labelValueLine(tpl.startLabel, formatDate(member.start_date)))
+  lines.push(labelValueLine(tpl.endLabel, formatDate(member.end_date)))
+
+  // ─── Notes ───────────────────────────────────────────────
   if (member.description) {
-    lines.push('notes:')
+    lines.push(tpl.notesLabel)
     const desc = member.description
     for (let i = 0; i < desc.length; i += RECEIPT_WIDTH) {
       lines.push(desc.substring(i, i + RECEIPT_WIDTH))
@@ -87,29 +167,29 @@ function buildReceiptText(member, familyMembers = []) {
     lines.push(ruleLine('-'))
   }
 
-  lines.push(labelValueLine('base price:', formatMoney(member.base_price)))
+  // ─── Pricing ─────────────────────────────────────────────
+  lines.push(labelValueLine(tpl.basePriceLabel, formatMoney(member.base_price)))
   if (member.discount_type && member.discount_type !== 'none') {
     const discountLabel =
       member.discount_type === 'percentage'
         ? `${member.discount_value}%`
         : formatMoney(member.discount_value)
-    lines.push(labelValueLine('discount:', discountLabel))
+    lines.push(labelValueLine(tpl.discountLabel, discountLabel))
   }
   lines.push(ruleLine('-'))
-  lines.push(labelValueLine('total paid:', formatMoney(member.amount_paid)))
+  lines.push(labelValueLine(tpl.totalPaidLabel, formatMoney(member.amount_paid)))
   lines.push(ruleLine('='))
+
+  // ─── Footer ──────────────────────────────────────────────
   lines.push('')
-  lines.push(centerLine('Thank you!'))
-  lines.push('') // spacing before the QR code
+  if (tpl.footerMessage) {
+    lines.push(centerLine(tpl.footerMessage))
+  }
 
   return lines.join('\n')
 }
 
-function buildQRData() {
-  return INSTAGRAM_URL
-}
-
-// ─── Byte helpers ─────────────────────────────────────────────────────────────
+// ─── ESC/POS QR Code ─────────────────────────────────────────────────────────
 
 function concatBytes(chunks) {
   let total = 0
@@ -155,6 +235,8 @@ function escposQRCode(dataStr, { size = 6, errorCorrection = 0x31 } = {}) {
   return concatBytes([header, data, footer])
 }
 
+// ─── Fallback browser print ──────────────────────────────────────────────────
+
 function fallbackBrowserPrint(text) {
   const printWindow = window.open('', '_blank', 'width=380,height=600')
   if (!printWindow) {
@@ -172,14 +254,20 @@ function fallbackBrowserPrint(text) {
   printWindow.print()
 }
 
-export async function printReceiptViaRawBT(member) {
+// ─── Main entry point ────────────────────────────────────────────────────────
+
+/**
+ * @param {object} member - The member record
+ * @param {object} settings - Full settings object from SettingsContext
+ *                            (must contain gymName and receiptTemplate)
+ */
+export async function printReceiptViaRawBT(member, settings = {}) {
   let familyMembers = []
 
-  // If it's a family plan, fetch all members sharing the EXACT same start_date and end_date
   if (member.subscription_type === 'family') {
     try {
       let query = supabase.from('members').select('first_name, last_name, phone_number')
-      
+
       if (member.start_date) {
         query = query.eq('start_date', member.start_date)
       }
@@ -197,16 +285,23 @@ export async function printReceiptViaRawBT(member) {
     }
   }
 
-  const text = buildReceiptText(member, familyMembers)
+  const text = buildReceiptText(member, familyMembers, settings)
+  const tpl = { ...DEFAULT_RECEIPT_TEMPLATE, ...(settings.receiptTemplate || {}) }
 
   try {
     const enc = new TextEncoder()
-    const payload = concatBytes([
-      enc.encode(text + '\n'),
-      enc.encode(centerLine('Follow us on Instagram') + '\n'),
-      escposQRCode(buildQRData()),
-      enc.encode('\n\n\n'),
-    ])
+    const chunks = [enc.encode(text + '\n')]
+
+    if (tpl.showInstagramQR && tpl.instagramUrl) {
+      if (tpl.instagramCaption) {
+        chunks.push(enc.encode(centerLine(tpl.instagramCaption) + '\n'))
+      }
+      chunks.push(escposQRCode(tpl.instagramUrl))
+    }
+
+    chunks.push(enc.encode('\n\n\n'))
+
+    const payload = concatBytes(chunks)
     const encoded = bytesToBase64(payload)
     const url = `rawbt:base64,${encoded}`
     window.location.href = url

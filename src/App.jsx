@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { AuthProvider, useAuth } from './context/AuthContext'
+import { AuthProvider, useAuth, ADMIN_ONLY_PAGES } from './context/AuthContext'
+import { SettingsProvider } from './context/SettingsContext'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Memberships from './pages/Memberships'
@@ -8,6 +9,7 @@ import Financials from './pages/Financials'
 import Login from './pages/Login'
 import AccessDenied from './pages/AccessDenied'
 import Accounts from './pages/Accounts'
+import Settings from './pages/Settings'
 
 // Generic page-level guard
 function PageGuard({ path, children }) {
@@ -19,7 +21,7 @@ function PageGuard({ path, children }) {
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />
 
   // Admin-only pages check
-  if (path === '/accounts' && user.role !== 'admin') {
+  if (ADMIN_ONLY_PAGES.includes(path) && user.role !== 'admin') {
     return <Navigate to="/access-denied" replace />
   }
 
@@ -108,6 +110,14 @@ function AppRoutes() {
             </PageGuard>
           }
         />
+        <Route
+          path="settings"
+          element={
+            <PageGuard path="/settings">
+              <Settings />
+            </PageGuard>
+          }
+        />
       </Route>
 
       {/* Fallback */}
@@ -120,7 +130,9 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <SettingsProvider>
+          <AppRoutes />
+        </SettingsProvider>
       </AuthProvider>
     </BrowserRouter>
   )

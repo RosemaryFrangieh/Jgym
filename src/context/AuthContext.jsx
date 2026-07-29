@@ -8,6 +8,7 @@ export const ALL_PAGES = [
   { path: '/memberships', label: 'Memberships' },
   { path: '/classes', label: 'Classes' },
   { path: '/financials', label: 'Financials' },
+  { path: '/settings', label: 'Settings' },
 ]
 
 export const ADMIN_ONLY_PAGES = ['/accounts']

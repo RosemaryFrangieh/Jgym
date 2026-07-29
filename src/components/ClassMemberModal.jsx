@@ -2,23 +2,23 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { X } from 'lucide-react'
+import { useSettings } from '../context/SettingsContext'
 
-// Updated prices based on class type
-const FIXED_PRICES = {
-  aerobics: { daily: 5, monthly: 60 },
-  zumba: { daily: 5, monthly: 40 }
-}
 const DURATION_DAYS = { daily: 0, monthly: 30 }
 
 export default function ClassMemberModal({ member, onClose }) {
+  const { settings } = useSettings()
+  const FIXED_PRICES = settings.classPrices
+  const CLASS_TYPES = settings.classTypes
+  const defaultClassType = CLASS_TYPES[0]
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
     phone_number: '',
     description: '',
-    class_type: 'aerobics',
+    class_type: defaultClassType,
     subscription_type: 'monthly',
-    base_price: FIXED_PRICES.aerobics.monthly, // Default to aerobics monthly
+    base_price: FIXED_PRICES[defaultClassType]?.monthly ?? 0, // Default to first class type's monthly price
     discount_type: 'none',
     discount_value: 0,
     start_date: new Date().toISOString().split('T')[0],
@@ -29,7 +29,7 @@ export default function ClassMemberModal({ member, onClose }) {
 
   useEffect(() => {
     if (member) {
-      const classType = member.class_type || 'aerobics'
+      const classType = member.class_type || defaultClassType
       const subType = member.subscription_type || 'monthly'
       const defaultPrice = FIXED_PRICES[classType]?.[subType] || 0
 
@@ -71,7 +71,7 @@ export default function ClassMemberModal({ member, onClose }) {
 
     // Automatically update the base price if the class or subscription changes
     if (name === 'subscription_type' || name === 'class_type') {
-      updated.base_price = FIXED_PRICES[updated.class_type][updated.subscription_type]
+      updated.base_price = FIXED_PRICES[updated.class_type]?.[updated.subscription_type] ?? 0
     }
 
     setFormData(updated)
@@ -154,17 +154,18 @@ export default function ClassMemberModal({ member, onClose }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-slate-400 mb-1">Class</label>
-              <select name="class_type" value={formData.class_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
-                <option value="aerobics">Aerobics</option>
-                <option value="zumba">Zumba</option>
+              <select name="class_type" value={formData.class_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white capitalize">
+                {CLASS_TYPES.map(t => (
+                  <option key={t} value={t} className="capitalize">{t}</option>
+                ))}
               </select>
             </div>
             <div>
               <label className="block text-sm text-slate-400 mb-1">Plan</label>
               <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
                 {/* Dynamically display prices based on the selected class type */}
-                <option value="daily">Daily - ${FIXED_PRICES[formData.class_type].daily}</option>
-                <option value="monthly">Monthly - ${FIXED_PRICES[formData.class_type].monthly}</option>
+                <option value="daily">Daily - ${FIXED_PRICES[formData.class_type]?.daily ?? 0}</option>
+                <option value="monthly">Monthly - ${FIXED_PRICES[formData.class_type]?.monthly ?? 0}</option>
               </select>
             </div>
           </div>

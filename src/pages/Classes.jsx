@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient'
 import ClassMemberModal from '../components/ClassMemberModal'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
 import {
   Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight,
   CheckCircle, XCircle, Eye, RefreshCw, Calendar, Printer,
@@ -48,10 +49,8 @@ function monthBounds(ym) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 10
-const CLASS_TYPES = ['all', 'aerobics', 'zumba']
 const PLAN_TYPES = ['all', 'daily', 'monthly']
 const DEFAULT_FILTERS = { classType: 'all', planType: 'all', statusFilter: 'all', membershipStatus: 'all' }
-const FIXED_PRICES = { daily: 5, monthly: 40 }
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 function StatusBadge({ expired }) {
@@ -196,7 +195,9 @@ function DetailModal({ member, onClose, onRenew }) {
 
 // ─── Renew Modal ──────────────────────────────────────────────────────────────
 function RenewModal({ member, onClose, onSuccess }) {
-  const [classType, setClassType]       = useState(member.class_type || 'aerobics')
+  const { settings } = useSettings()
+  const CLASS_TYPES_ALL = settings.classTypes
+  const [classType, setClassType]       = useState(member.class_type || CLASS_TYPES_ALL[0])
   const [subscriptionType, setSubscriptionType] = useState(member.subscription_type === 'daily' ? 'monthly' : member.subscription_type)
   const [startDate, setStartDate]       = useState(new Date().toISOString().split('T')[0])
   const [discountType, setDiscountType] = useState('none')
@@ -208,9 +209,9 @@ function RenewModal({ member, onClose, onSuccess }) {
 
   const wasDaily   = member.subscription_type === 'daily'
   const switchingFromDaily = wasDaily && subscriptionType !== 'daily'
-  const DAILY_UPGRADE_DISCOUNT = 5
+  const DAILY_UPGRADE_DISCOUNT = settings.classPrices[classType]?.daily || 0
 
-  const rawBasePrice = FIXED_PRICES[subscriptionType] || 0
+  const rawBasePrice = settings.classPrices[classType]?.[subscriptionType] || 0
   const basePrice    = switchingFromDaily ? Math.max(0, rawBasePrice - DAILY_UPGRADE_DISCOUNT) : rawBasePrice
   const discVal      = parseFloat(discountValue) || 0
   const amountPaid   = discountType === 'percentage'
@@ -265,15 +266,16 @@ function RenewModal({ member, onClose, onSuccess }) {
         {error && <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">{error}</div>}
         {switchingFromDaily && (
           <div className="mb-4 p-3 bg-electric-blue/10 border border-electric-blue/30 rounded-lg text-electric-blue text-sm">
-            Switching from Daily — $5 discount applied automatically, and this membership now needs a name and phone number.
+            Switching from Daily — ${DAILY_UPGRADE_DISCOUNT} discount applied automatically, and this membership now needs a name and phone number.
           </div>
         )}
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-400 mb-1">Class</label>
-            <select value={classType} onChange={e => setClassType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
-              <option value="aerobics">Aerobics</option>
-              <option value="zumba">Zumba</option>
+            <select value={classType} onChange={e => setClassType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white capitalize">
+              {CLASS_TYPES_ALL.map(t => (
+                <option key={t} value={t} className="capitalize">{t}</option>
+              ))}
             </select>
           </div>
           {switchingFromDaily && (
@@ -291,8 +293,8 @@ function RenewModal({ member, onClose, onSuccess }) {
           <div>
             <label className="block text-sm text-slate-400 mb-1">Plan</label>
             <select value={subscriptionType} onChange={e => setSubscriptionType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
-              <option value="daily">Daily — ${FIXED_PRICES.daily}</option>
-              <option value="monthly">Monthly — ${FIXED_PRICES.monthly}</option>
+              <option value="daily">Daily — ${settings.classPrices[classType]?.daily ?? 0}</option>
+              <option value="monthly">Monthly — ${settings.classPrices[classType]?.monthly ?? 0}</option>
             </select>
           </div>
           <div>
@@ -361,6 +363,8 @@ function MonthNavigator({ value, onChange }) {
 export default function Classes() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const { settings } = useSettings()
+  const CLASS_TYPES = ['all', ...settings.classTypes]
 
   const [members, setMembers]               = useState([])
   const [loading, setLoading]               = useState(true)

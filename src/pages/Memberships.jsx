@@ -5,6 +5,7 @@ import MemberModal from '../components/MemberModal'
 import { Search, Plus, Pencil, Trash2, X, ChevronLeft, ChevronRight, CheckCircle, XCircle, Clock, Eye, RefreshCw, Calendar, Printer, MessageSquare, Send } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 import { useAuth } from '../context/AuthContext'
+import { useSettings } from '../context/SettingsContext'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,7 +85,6 @@ function formatLbNumber(phone) {
 const PAGE_SIZE = 10
 const SUBSCRIPTION_TYPES = ['all', 'daily', 'weekly', 'biweekly', 'triweekly', 'monthly', 'family', 'custom']
 const DEFAULT_FILTERS = { subscriptionType: 'all', statusFilter: 'all', membershipStatus: 'all' }
-const FIXED_PRICES = { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40, family: 100 }
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 
@@ -292,6 +292,8 @@ function DetailModal({ member, onClose, onRenew }) {
 // ─── Renew Modal ──────────────────────────────────────────────────────────────
 
 function RenewModal({ member, onClose, onSuccess }) {
+  const { settings } = useSettings()
+  const FIXED_PRICES = settings.membershipPrices
   const [subscriptionType, setSubscriptionType] = useState(member.subscription_type === 'custom' ? 'monthly' : member.subscription_type)
   const _currentEndForRenewal = computeEndDate(member)
   const _alreadyExpired = isMembershipExpired(_currentEndForRenewal)
@@ -308,7 +310,7 @@ function RenewModal({ member, onClose, onSuccess }) {
   const [fullName, setFullName]       = useState(`${member.first_name || ''} ${member.last_name || ''}`.trim())
   const [phoneNumber, setPhoneNumber] = useState(member.phone_number || '')
 
-  const DAILY_UPGRADE_DISCOUNT = 7
+  const DAILY_UPGRADE_DISCOUNT = FIXED_PRICES.daily || 0
   const isCustom   = subscriptionType === 'custom'
   const wasDaily   = member.subscription_type === 'daily'
   const switchingFromDaily = wasDaily && subscriptionType !== 'daily'
@@ -397,7 +399,7 @@ function RenewModal({ member, onClose, onSuccess }) {
         
         {switchingFromDaily && (
           <div className="mb-4 p-3 bg-electric-blue/10 border border-electric-blue/30 rounded-lg text-electric-blue text-sm">
-            Switching from Daily — $7 discount applied automatically, and this membership now needs a name and phone number.
+            Switching from Daily — ${DAILY_UPGRADE_DISCOUNT} discount applied automatically, and this membership now needs a name and phone number.
           </div>
         )}
         
