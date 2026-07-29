@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { X, Printer, Check, Plus } from 'lucide-react'
 import { printReceiptViaRawBT } from '../utils/receiptPrinter'
 import { useSettings } from '../context/SettingsContext'
-​
+
 // Family plans store their 3 member names + phone numbers inside the description
 // field, structured so we can parse them back when editing.
 const FAMILY_MARKER = 'Family plan'
@@ -27,7 +27,7 @@ function parseFamilyDescription(description) {
   }
   return result
 }
-​
+
 export default function MemberModal({ member, onClose }) {
   const { settings } = useSettings()
   const FIXED_PRICES = settings.membershipPrices
@@ -47,7 +47,7 @@ export default function MemberModal({ member, onClose }) {
   const isFamily = formData.subscription_type === 'family'
   const [familyNames, setFamilyNames]   = useState(['', '', ''])
   const [familyPhones, setFamilyPhones] = useState([''])
-​
+
   useEffect(() => {
     if (member) {
       setFullName(`${member.first_name || ''} ${member.last_name || ''}`.trim())
@@ -64,16 +64,16 @@ export default function MemberModal({ member, onClose }) {
       }
     }
   }, [member])
-​
+
   useEffect(() => {
     calculateAmount()
   }, [formData.base_price, formData.discount_type, formData.discount_value])
-​
+
   const calculateAmount = () => {
     const base = parseFloat(formData.base_price) || 0
     const discVal = parseFloat(formData.discount_value) || 0
     let finalAmount = base
-​
+
     if (formData.discount_type === 'percentage') {
       finalAmount = base - (base * (discVal / 100))
     } else if (formData.discount_type === 'fixed') {
@@ -81,7 +81,7 @@ export default function MemberModal({ member, onClose }) {
     }
     setAmountPaid(finalAmount < 0 ? 0 : finalAmount)
   }
-​
+
   const handleFullNameChange = (e) => {
     const value = e.target.value
     setFullName(value)
@@ -90,25 +90,25 @@ export default function MemberModal({ member, onClose }) {
     const last_name = parts.slice(1).join(' ')
     setFormData(f => ({ ...f, first_name, last_name }))
   }
-​
+
   const handleChange = (e) => {
     const { name, value } = e.target
     const updated = { ...formData, [name]: value }
-​
+
     if (name === 'subscription_type' && value !== 'custom') {
       updated.base_price = FIXED_PRICES[value]
     }
-​
+
     setFormData(updated)
   }
-​
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
-​
+
     let endDateObj
-​
+
     if (isCustom) {
       endDateObj = new Date(formData.end_date)
     } else {
@@ -117,13 +117,13 @@ export default function MemberModal({ member, onClose }) {
       endDateObj = new Date(startDateObj)
       endDateObj.setDate(endDateObj.getDate() + duration)
     }
-​
+
     let firstName = formData.first_name
     let lastName = formData.last_name
     let phone = formData.phone_number
     let description = formData.description
     let basePrice = parseFloat(formData.base_price)
-​
+
     if (isFamily) {
       const names = familyNames.map(n => n.trim()).filter(Boolean)
       const phones = familyPhones.map(p => p.trim()).filter(Boolean)
@@ -134,7 +134,7 @@ export default function MemberModal({ member, onClose }) {
       basePrice = FIXED_PRICES.family
       description = buildFamilyDescription(names, phones, formData.description)
     }
-​
+
     const payload = {
       first_name: firstName,
       last_name: lastName,
@@ -148,7 +148,7 @@ export default function MemberModal({ member, onClose }) {
       start_date: formData.start_date,
       end_date: endDateObj.toISOString().split('T')[0]
     }
-​
+
    let result
 if (member) {
   // Editing an existing member's details isn't a new payment —
@@ -161,17 +161,17 @@ if (member) {
     last_payment_at: new Date().toISOString(),
   }])
 }
-​
+
     setLoading(false)
-​
+
     if (result.error) {
       setError(result.error.message)
       return
     }
-​
+
     setSavedMember(payload)
   }
-​
+
   if (savedMember) {
     return (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
@@ -185,9 +185,9 @@ if (member) {
               {savedMember.first_name} {savedMember.last_name} — ${Number(savedMember.amount_paid).toFixed(2)} paid
             </p>
           </div>
-​
+
           <button
-            onClick={() => printReceiptViaRawBT(savedMember)}
+            onClick={() => printReceiptViaRawBT(savedMember, settings)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 mb-3"
           >
             <Printer size={20} /> Print Receipt (Bluetooth)
@@ -195,7 +195,7 @@ if (member) {
           <p className="text-xs text-slate-500 text-center mb-4">
             Sends the receipt to RawBT, which relays it to your paired Bluetooth printer.
           </p>
-​
+
           <button
             onClick={onClose}
             className="w-full px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg"
@@ -206,7 +206,7 @@ if (member) {
       </div>
     )
   }
-​
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-navy-700 max-h-[90vh] overflow-y-auto">
@@ -214,13 +214,13 @@ if (member) {
           <h3 className="text-xl font-bold text-white">{member ? 'Edit Member' : 'Add New Member'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
-​
+
         {error && (
           <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
             {error}
           </div>
         )}
-​
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isFamily && (
             <>
@@ -238,7 +238,7 @@ if (member) {
                   className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
                 />
               </div>
-​
+
               <div>
                 <label className="block text-sm text-slate-400 mb-1">
                   Phone Number {isDaily && <span className="text-slate-600">(optional for daily)</span>}
@@ -247,7 +247,7 @@ if (member) {
               </div>
             </>
           )}
-​
+
           {isFamily && (
             <div className="space-y-3">
               <div>
@@ -292,7 +292,7 @@ if (member) {
               </div>
             </div>
           )}
-​
+
           <div>
             <label className="block text-sm text-slate-400 mb-1">Subscription Type</label>
             <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
@@ -305,7 +305,7 @@ if (member) {
               <option value="custom">Custom</option>
             </select>
           </div>
-​
+
           {isCustom ? (
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -327,7 +327,7 @@ if (member) {
               <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
             </div>
           )}
-​
+
           {!isCustom && (
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -348,7 +348,7 @@ if (member) {
               </div>
             </div>
           )}
-​
+
           {isCustom && (
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -365,17 +365,17 @@ if (member) {
               </div>
             </div>
           )}
-​
+
           <div>
             <label className="block text-sm text-slate-400 mb-1">Description <span className="text-slate-600">(optional)</span></label>
             <textarea name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="Any notes about this membership..." className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white resize-none placeholder:text-slate-600" />
           </div>
-​
+
           <div className="bg-navy-900 p-4 rounded-lg flex justify-between items-center">
             <span className="text-slate-400">Final Amount Paid:</span>
             <span className="text-2xl font-bold text-electric-green">${amountPaid.toFixed(2)}</span>
           </div>
-​
+
           <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white">Cancel</button>
             <button type="submit" disabled={loading} className="px-6 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50">
