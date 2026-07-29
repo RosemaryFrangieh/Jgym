@@ -36,7 +36,7 @@ export const DEFAULT_RECEIPT_TEMPLATE = {
   // Footer
   footerMessage: 'Thank you!',
   instagramCaption: 'Follow us on Instagram',
-  instagramUrl: 'https://www.instagram.com/your_gym_handle',
+  instagramUrl: 'https://www.instagram.com/j_gym_ehden?igsh=ZmkxbG84MjVnMXI0',
   showInstagramQR: true,
 }
 

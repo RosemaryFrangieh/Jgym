@@ -397,7 +397,7 @@ export default function Settings() {
                     <TextField label="Footer Message" value={form.receiptTemplate?.footerMessage} onChange={v => setReceiptField('footerMessage', v)} placeholder="Thank you!" />
                     <TextField label="Instagram Caption" value={form.receiptTemplate?.instagramCaption} onChange={v => setReceiptField('instagramCaption', v)} placeholder="Follow us on Instagram" />
                   </div>
-                  <TextField label="Instagram URL" value={form.receiptTemplate?.instagramUrl} onChange={v => setReceiptField('instagramUrl', v)} placeholder="https://www.instagram.com/your_gym_handle" />
+                  <TextField label="Instagram URL" value={form.receiptTemplate?.instagramUrl} onChange={v => setReceiptField('instagramUrl', v)} placeholder="https://www.instagram.com/j_gym_ehden?igsh=ZmkxbG84MjVnMXI0" />
                   <div className="bg-navy-800/50 rounded-xl px-4 py-2 border border-navy-700/50">
                     <Toggle label="Print Instagram QR code at the bottom" checked={form.receiptTemplate?.showInstagramQR ?? true} onChange={v => setReceiptField('showInstagramQR', v)} />
                   </div>
