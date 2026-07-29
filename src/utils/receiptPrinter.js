@@ -254,6 +254,23 @@ function fallbackBrowserPrint(text) {
   printWindow.print()
 }
 
+// Helper to clean the Instagram URL
+function sanitizeInstagramUrl(rawUrl) {
+  let url = (rawUrl || '').trim();
+  if (!url) return '';
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+  }
+  try {
+    const urlObj = new URL(url);
+    // Keep only the origin and path, dropping query strings like ?igsh=...
+    // which can cause blank pages when scanned by mobile cameras.
+    return urlObj.origin + urlObj.pathname;
+  } catch {
+    return url; // If URL parsing fails, fall back to the raw string
+  }
+}
+
 // ─── Main entry point ────────────────────────────────────────────────────────
 
 /**
@@ -293,10 +310,13 @@ export async function printReceiptViaRawBT(member, settings = {}) {
     const chunks = [enc.encode(text + '\n')]
 
     if (tpl.showInstagramQR && tpl.instagramUrl) {
+      // Clean the URL to ensure it scans correctly on all phones
+      const cleanUrl = sanitizeInstagramUrl(tpl.instagramUrl);
+
       if (tpl.instagramCaption) {
         chunks.push(enc.encode(centerLine(tpl.instagramCaption) + '\n'))
       }
-      chunks.push(escposQRCode(tpl.instagramUrl))
+      chunks.push(escposQRCode(cleanUrl, { size: 6 }))
     }
 
     chunks.push(enc.encode('\n\n\n'))

@@ -209,7 +209,8 @@ export default function Settings() {
         membershipPrices,
         classTypes: form.classTypes,
         classPrices,
-        receiptTemplate: form.receiptTemplate,
+        // Ensure we merge with defaults so no fields are lost during save
+        receiptTemplate: { ...DEFAULT_RECEIPT_TEMPLATE, ...form.receiptTemplate },
       })
       showToast('Settings saved successfully.')
     } catch (e) {
