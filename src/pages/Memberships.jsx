@@ -702,8 +702,17 @@ function SmsModal({ members, onClose }) {
                   placeholder="Search name or phone..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-4 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
+                  className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-9 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
                 />
+                {search && (
+                  <button 
+                    onClick={() => setSearch('')} 
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                    title="Clear search"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-1 bg-navy-900 border border-navy-700 rounded-lg p-1">
                 {['all', 'active', 'pending', 'expired'].map(s => (
@@ -1008,8 +1017,17 @@ export default function Memberships() {
               placeholder="Search by name or phone…"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-electric-blue"
+              className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-9 py-2.5 text-white text-sm focus:outline-none focus:border-electric-blue"
             />
+            {search && (
+              <button 
+                onClick={() => { setSearch(''); setPage(1) }} 
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors" 
+                title="Clear search"
+              >
+                <X size={18} />
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {['all', 'active', 'pending', 'expired'].map(s => (
@@ -1038,6 +1056,16 @@ export default function Memberships() {
               >{s}</button>
             ))}
           </div>
+          
+          {hasActiveFilters && (
+            <button 
+              onClick={clearFilters} 
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-navy-900 border border-navy-700 transition-colors whitespace-nowrap"
+              title="Clear all filters"
+            >
+              <X size={16} /> Clear
+            </button>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
