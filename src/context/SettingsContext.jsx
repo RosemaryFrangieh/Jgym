@@ -1,5 +1,3 @@
-// settingscontext.jsx
-
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 import { DEFAULT_RECEIPT_TEMPLATE } from '../utils/receiptPrinter'
@@ -15,7 +13,7 @@ export const DEFAULT_SETTINGS = {
   classTypes: ['aerobics', 'zumba'],
   classPrices: {
     aerobics: { daily: 5, monthly: 60 },
-    zumba: { daily: 5, monthly: 40 },
+    zumba:    { daily: 5, monthly: 40 },
   },
   receiptTemplate: { ...DEFAULT_RECEIPT_TEMPLATE },
 }
@@ -23,12 +21,12 @@ export const DEFAULT_SETTINGS = {
 function normalizeSettings(row) {
   if (!row) return DEFAULT_SETTINGS
   return {
-    gymName: row.gym_name ?? DEFAULT_SETTINGS.gymName,
-    whatsappCountryCode: row.whatsapp_country_code ?? DEFAULT_SETTINGS.whatsappCountryCode,
-    membershipPrices: { ...DEFAULT_SETTINGS.membershipPrices, ...(row.membership_prices ?? {}) },
-    classTypes: row.class_types?.length ? row.class_types : DEFAULT_SETTINGS.classTypes,
-    classPrices: { ...DEFAULT_SETTINGS.classPrices, ...(row.class_prices ?? {}) },
-    receiptTemplate: { ...DEFAULT_RECEIPT_TEMPLATE, ...(row.receipt_template ?? {}) },
+    gymName:               row.gym_name ?? DEFAULT_SETTINGS.gymName,
+    whatsappCountryCode:   row.whatsapp_country_code ?? DEFAULT_SETTINGS.whatsappCountryCode,
+    membershipPrices:      { ...DEFAULT_SETTINGS.membershipPrices, ...(row.membership_prices ?? {}) },
+    classTypes:            row.class_types?.length ? row.class_types : DEFAULT_SETTINGS.classTypes,
+    classPrices:           { ...DEFAULT_SETTINGS.classPrices, ...(row.class_prices ?? {}) },
+    receiptTemplate:       { ...DEFAULT_RECEIPT_TEMPLATE, ...(row.receipt_template ?? {}) },
   }
 }
 
@@ -40,7 +38,7 @@ function denormalizeSettings(settings) {
     membership_prices: settings.membershipPrices,
     class_types: settings.classTypes,
     class_prices: settings.classPrices,
-    receipt_template: settings.receiptTemplate,
+    receipt_template: { ...DEFAULT_RECEIPT_TEMPLATE, ...settings.receiptTemplate },
     updated_at: new Date().toISOString(),
   }
 }
