@@ -62,22 +62,14 @@ function monthBounds(ym) {
 
 // ─── SMS Formatting & Logic ───────────────────────────────────────────────────
 
-// Formats the phone number based on your rules:
-// 8 digits -> +961 XXXXXXXX
-// 7 digits starting with 3 -> +961 3XXXXXX
 function formatLbNumber(phone) {
   if (!phone) return null
-  let cleaned = ('' + phone).replace(/\D/g, '') // remove all non-digits
-  
-  // Remove country code if already present
+  let cleaned = ('' + phone).replace(/\D/g, '')
   if (cleaned.startsWith('961')) cleaned = cleaned.substring(3)
-  // Remove leading zero if present (e.g. 03 123 456 -> 3 123 456)
   if (cleaned.startsWith('0')) cleaned = cleaned.substring(1)
-
   if (cleaned.length === 8) return `+961${cleaned}`
   if (cleaned.length === 7 && cleaned.startsWith('3')) return `+961${cleaned}`
-  
-  return null // Invalid for our criteria
+  return null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -154,7 +146,6 @@ function DetailModal({ member, onClose, onRenew }) {
       setLoadingHistory(true)
       let query = supabase.from('members').select('*').order('last_payment_at', { ascending: false })
       
-      // Fetch history by phone number, or by name if phone is missing
       if (member.phone_number) {
         query = query.eq('phone_number', member.phone_number)
       } else {
@@ -240,7 +231,6 @@ function DetailModal({ member, onClose, onRenew }) {
           )}
         </div>
 
-        {/* ─── Membership History Timeline ─── */}
         <div className="mb-5">
           <h4 className="text-sm font-semibold text-slate-400 mb-2 uppercase tracking-wide">Full Membership History</h4>
           {loadingHistory ? (
@@ -322,13 +312,10 @@ function RenewModal({ member, onClose, onSuccess }) {
     ? Math.max(0, basePrice - basePrice * (discVal / 100))
     : discountType === 'fixed' ? Math.max(0, basePrice - discVal) : basePrice
 
-  // Check if info is missing, but DON'T disable the button. We want to show an error instead.
   const infoMissing = switchingFromDaily && (!fullName.trim() || !phoneNumber.trim())
 
   const handleRenew = async () => {
     setError(null)
-    
-    // Explicitly check and show an error if they are switching from daily but forgot the info
     if (infoMissing) { 
       setError('Please enter a Full Name and Phone Number to upgrade from a Daily pass.'); 
       return 
@@ -345,7 +332,6 @@ function RenewModal({ member, onClose, onSuccess }) {
       endDateStr = start.toISOString().split('T')[0]
     }
     
-    // Create a NEW record instead of updating the old one. 
     const newRecord = {
       first_name: member.first_name,
       last_name: member.last_name,
@@ -353,7 +339,6 @@ function RenewModal({ member, onClose, onSuccess }) {
       description: member.description, 
       subscription_type: subscriptionType, 
       base_price: basePrice,
-      // Safely handle discount type to prevent database enum errors
       discount_type: discountType, 
       discount_value: discountType === 'none' ? 0 : discVal,
       amount_paid: amountPaid, 
@@ -361,13 +346,9 @@ function RenewModal({ member, onClose, onSuccess }) {
       end_date: endDateStr,
       renewal_count: (member.renewal_count || 0) + 1,
       last_payment_at: new Date().toISOString(),
-      
-      // ─── ADD THIS LINE ──────────────────────────────────
-      // If the membership being renewed was 'daily', mark it as true in the database
       was_daily: member.subscription_type === 'daily',
     }
 
-    // Handle daily switch where contact info is newly added
     if (switchingFromDaily) {
       const parts = fullName.trim().split(/\s+/).filter(Boolean)
       newRecord.first_name = parts[0] || ''
@@ -384,6 +365,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     }
     onSuccess()
   }  
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
@@ -476,7 +458,6 @@ function RenewModal({ member, onClose, onSuccess }) {
         
         <div className="flex justify-end gap-3 mt-5">
           <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Cancel</button>
-          {/* Removed infoMissing from disabled so the user can click and trigger the error message */}
           <button onClick={handleRenew} disabled={loading || (isCustom && !customEndDate)} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm">
             <RefreshCw size={15} /> {loading ? 'Renewing…' : 'Confirm Renewal'}
           </button>
@@ -485,6 +466,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     </div>
   )
 }
+
 // ─── SMS Modal ────────────────────────────────────────────────────────────────
 
 function SmsModal({ members, onClose }) {
@@ -494,12 +476,10 @@ function SmsModal({ members, onClose }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedIds, setSelectedIds] = useState(new Set())
   
-  // Chunking State
   const [chunks, setChunks] = useState([])
   const [sentChunks, setSentChunks] = useState(new Set())
   const [isProcessing, setIsProcessing] = useState(false)
 
-  // Process numbers based on rules and compute state
   const processedMembers = useMemo(() => {
     return members.map(m => {
       const state = getMembershipState(m)
@@ -514,13 +494,10 @@ function SmsModal({ members, onClose }) {
   }, [members])
 
   const filteredModalMembers = processedMembers.filter(m => {
-    if (!m.formatted) return false // Only show valid numbers in the list
-    
+    if (!m.formatted) return false
     const q = search.toLowerCase()
     if (q && !m.name.toLowerCase().includes(q) && !(m.raw || '').includes(q)) return false
-    
     if (statusFilter !== 'all' && m.state !== statusFilter) return false
-    
     return true
   })
 
@@ -559,7 +536,6 @@ function SmsModal({ members, onClose }) {
       return
     }
 
-    // Divide into chunks of 20
     const chunkSize = 20
     const newChunks = []
     for (let i = 0; i < selectedRecipients.length; i += chunkSize) {
@@ -577,7 +553,6 @@ function SmsModal({ members, onClose }) {
     const encodedMessage = encodeURIComponent(message)
     const smsLink = `sms:${numbers}?body=${encodedMessage}`
     
-    // Open native SMS app
     const link = document.createElement('a')
     link.href = smsLink
     link.click()
@@ -631,7 +606,6 @@ function SmsModal({ members, onClose }) {
           </div>
         )}
 
-        {/* SEND PROCESS VIEW */}
         {isProcessing ? (
           <div className="flex-1 overflow-y-auto">
             <div className="space-y-3">
@@ -646,16 +620,10 @@ function SmsModal({ members, onClose }) {
                     
                     {!isSent ? (
                       <div className="flex gap-2 mt-2">
-                        <button 
-                          onClick={() => openChunk(index)}
-                          className="flex-1 px-3 py-2 bg-electric-blue text-white rounded-lg text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2"
-                        >
+                        <button onClick={() => openChunk(index)} className="flex-1 px-3 py-2 bg-electric-blue text-white rounded-lg text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2">
                           <Send size={14} /> Open in SMS App
                         </button>
-                        <button 
-                          onClick={() => markChunkAsSent(index)}
-                          className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2"
-                        >
+                        <button onClick={() => markChunkAsSent(index)} className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2">
                           <CheckCircle size={14} /> Mark as Sent
                         </button>
                       </div>
@@ -669,31 +637,22 @@ function SmsModal({ members, onClose }) {
               })}
             </div>
             
-            <button 
-              onClick={resetProcess}
-              className="w-full mt-5 px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg text-sm font-medium hover:border-slate-500 transition-colors"
-            >
+            <button onClick={resetProcess} className="w-full mt-5 px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg text-sm font-medium hover:border-slate-500 transition-colors">
               Clear and Start Over
             </button>
           </div>
         ) : (
-          /* SELECTION VIEW (Normal Modal) */
           <>
-            {/* Selection Summary & Select All */}
             <div className="bg-navy-900 border border-navy-700 rounded-lg p-3 mb-4 text-sm flex justify-between items-center">
               <div className="flex flex-col">
                 <span className="text-slate-400 text-xs uppercase tracking-wide">Total Selected</span>
                 <span className="text-green-400 font-bold text-lg">{selectedRecipients.length} Members</span>
               </div>
-              <button 
-                onClick={toggleSelectAll} 
-                className="px-3 py-1.5 bg-navy-700 text-white rounded-md text-sm hover:bg-navy-600 transition-colors"
-              >
+              <button onClick={toggleSelectAll} className="px-3 py-1.5 bg-navy-700 text-white rounded-md text-sm hover:bg-navy-600 transition-colors">
                 {allVisibleSelected ? 'Deselect Visible' : 'Select All Visible'}
               </button>
             </div>
 
-            {/* Filters & Search */}
             <div className="flex flex-col sm:flex-row gap-3 mb-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
@@ -705,47 +664,26 @@ function SmsModal({ members, onClose }) {
                   className="w-full bg-navy-900 border border-navy-700 rounded-lg pl-9 pr-9 py-2 text-white text-sm focus:outline-none focus:border-electric-blue"
                 />
                 {search && (
-                  <button 
-                    onClick={() => setSearch('')} 
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-                    title="Clear search"
-                  >
+                  <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white" title="Clear search">
                     <X size={16} />
                   </button>
                 )}
               </div>
               <div className="flex items-center gap-1 bg-navy-900 border border-navy-700 rounded-lg p-1">
                 {['all', 'active', 'pending', 'expired'].map(s => (
-                  <button 
-                    key={s} 
-                    onClick={() => setStatusFilter(s)}
-                    className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${
-                      statusFilter === s ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
-                    }`}
-                  >{s}</button>
+                  <button key={s} onClick={() => setStatusFilter(s)} className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-colors ${statusFilter === s ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'}`}>{s}</button>
                 ))}
               </div>
             </div>
 
-            {/* Recipients List */}
             <div className="flex-1 overflow-y-auto bg-navy-900 border border-navy-700 rounded-lg p-2 mb-4 min-h-[150px] max-h-[300px]">
               {filteredModalMembers.length === 0 ? (
                 <div className="text-center text-slate-500 py-4 text-sm">No valid members found for your filters.</div>
               ) : (
                 filteredModalMembers.map(m => (
-                  <div 
-                    key={m.id} 
-                    className={`flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-navy-800 transition-colors ${selectedIds.has(m.id) ? 'bg-navy-800' : ''}`}
-                    onClick={() => toggleSelection(m.id)}
-                  >
+                  <div key={m.id} className={`flex items-center justify-between p-2 rounded-md cursor-pointer hover:bg-navy-800 transition-colors ${selectedIds.has(m.id) ? 'bg-navy-800' : ''}`} onClick={() => toggleSelection(m.id)}>
                     <div className="flex items-center gap-3">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedIds.has(m.id)} 
-                        onChange={() => toggleSelection(m.id)} 
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-4 h-4 accent-electric-blue cursor-pointer"
-                      />
+                      <input type="checkbox" checked={selectedIds.has(m.id)} onChange={() => toggleSelection(m.id)} onClick={(e) => e.stopPropagation()} className="w-4 h-4 accent-electric-blue cursor-pointer" />
                       <div>
                         <p className="text-white text-sm font-medium">{m.name}</p>
                         <p className="text-slate-500 text-xs">{m.formatted}</p>
@@ -757,27 +695,15 @@ function SmsModal({ members, onClose }) {
               )}
             </div>
 
-            {/* Message Textarea */}
             <div className="mb-4">
               <label className="block text-sm text-slate-400 mb-1">Message</label>
-              <textarea 
-                value={message} 
-                onChange={e => setMessage(e.target.value)} 
-                rows={4}
-                placeholder="Type your message here..."
-                className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-electric-blue"
-              />
+              <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} placeholder="Type your message here..." className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-electric-blue" />
               <p className="text-xs text-slate-500 mt-1">{message.length} characters</p>
             </div>
 
-            {/* Footer Actions */}
             <div className="flex justify-end gap-3 mt-auto">
               <button onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white text-sm">Close</button>
-              <button 
-                onClick={startSendingProcess} 
-                disabled={selectedRecipients.length === 0} 
-                className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm"
-              >
+              <button onClick={startSendingProcess} disabled={selectedRecipients.length === 0} className="flex items-center gap-2 px-5 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 text-sm">
                 <Send size={15} /> Start Sending Process
               </button>
             </div>
@@ -836,7 +762,7 @@ export default function Memberships() {
   const [currentMember, setCurrentMember] = useState(null)
   const [detailMember, setDetailMember]   = useState(null)
   const [renewMember, setRenewMember]     = useState(null)
-  const [smsModalOpen, setSmsModalOpen]   = useState(false) // <-- SMS Modal state
+  const [smsModalOpen, setSmsModalOpen]   = useState(false)
   
   const [rangeMode, setRangeMode] = useState('monthly')
   const [customRange, setCustomRange] = useState(() => {
@@ -851,9 +777,6 @@ export default function Memberships() {
       ? { from: customRange.start, to: customRange.end }
       : monthBounds(selectedMonth)
 
-    // Filtering/ordering by last_payment_at (not created_at) so that a
-    // renewal's payment shows up in the month it was actually collected,
-    // and past months don't get silently rewritten when a member renews.
     let query = supabase
       .from('members')
       .select('*')
@@ -966,15 +889,14 @@ export default function Memberships() {
             <MonthNavigator value={selectedMonth} onChange={(ym) => { setSelectedMonth(ym); setPage(1) }} />
           )}
           
-          {/* Send SMS Button — Admin only */}
-{isAdmin && (
-  <button
-    onClick={() => setSmsModalOpen(true)}
-    className="flex items-center gap-2 bg-electric-green text-navy-900 px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
-  >
-    <MessageSquare size={20} /> Send SMS
-  </button>
-)}
+          {isAdmin && (
+            <button
+              onClick={() => setSmsModalOpen(true)}
+              className="flex items-center gap-2 bg-electric-green text-navy-900 px-4 py-2 rounded-lg font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+            >
+              <MessageSquare size={20} /> Send SMS
+            </button>
+          )}
 
           <button
             onClick={() => { setCurrentMember(null); setIsModalOpen(true) }}
@@ -987,7 +909,7 @@ export default function Memberships() {
 
       {/* ── Monthly summary cards (admin only) ── */}
       {isAdmin && (
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Members This Month</p>
           <p className="text-2xl font-bold text-white">{loading ? '—' : filteredMembers.length}</p>
@@ -1029,7 +951,7 @@ export default function Memberships() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {['all', 'active', 'pending', 'expired'].map(s => (
               <button key={s} onClick={() => handleFilterChange('statusFilter', s)}
                 className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
@@ -1043,7 +965,7 @@ export default function Memberships() {
               >{s}</button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {['all', 'new', 'renewed'].map(s => (
               <button key={s} onClick={() => handleFilterChange('membershipStatus', s)}
                 className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
@@ -1080,19 +1002,19 @@ export default function Memberships() {
       </div>
 
       {/* ── Table ── */}
-      <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-hidden">
-        <table className="w-full text-left">
+      <div className="bg-navy-800 rounded-xl border border-navy-700 overflow-x-auto">
+        <table className="w-full text-left min-w-[900px]">
           <thead className="bg-navy-900 border-b border-navy-700 text-slate-400 text-sm">
             <tr>
-              <th className="p-4">Member</th>
-              <th className="p-4 hidden md:table-cell">Contact</th>
-              <th className="p-4">Plan</th>
-              <th className="p-4 hidden sm:table-cell">Start</th>
-              <th className="p-4 hidden lg:table-cell">End</th>
-              <th className="p-4">Status</th>
-              <th className="p-4">Amount</th>
-              <th className="p-4 hidden xl:table-cell">Description</th>
-              <th className="p-4 text-right">Actions</th>
+              <th className="p-3 whitespace-nowrap">Member</th>
+              <th className="p-3 whitespace-nowrap hidden md:table-cell">Contact</th>
+              <th className="p-3 whitespace-nowrap">Plan</th>
+              <th className="p-3 whitespace-nowrap hidden sm:table-cell">Start</th>
+              <th className="p-3 whitespace-nowrap hidden lg:table-cell">End</th>
+              <th className="p-3 whitespace-nowrap">Status</th>
+              <th className="p-3 whitespace-nowrap">Amount</th>
+              <th className="p-3 whitespace-nowrap hidden xl:table-cell">Description</th>
+              <th className="p-3 whitespace-nowrap text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1108,19 +1030,19 @@ export default function Memberships() {
             ) : (
               paginated.map(m => (
                 <tr key={m.id} className={`border-b border-navy-700 transition-colors ${m._state === 'expired' ? 'bg-red-950/20 hover:bg-red-950/30' : m._state === 'pending' ? 'bg-yellow-950/20 hover:bg-yellow-950/30' : 'hover:bg-navy-900/50'}`}>
-                  <td className="p-4">
+                  <td className="p-3 whitespace-nowrap">
                     <p className="text-white font-medium">{memberDisplayName(m)}</p>
                     <p className="text-slate-500 text-xs mt-0.5">{new Date(m.last_payment_at || m.created_at).toLocaleDateString()}</p>
                   </td>
-                  <td className="p-4 hidden md:table-cell text-slate-400 text-sm">{m.phone_number || '—'}</td>
-                  <td className="p-4"><SubscriptionBadge type={m.subscription_type} /></td>
-                  <td className="p-4 hidden sm:table-cell text-slate-400 text-sm">
+                  <td className="p-3 whitespace-nowrap hidden md:table-cell text-slate-400 text-sm">{m.phone_number || '—'}</td>
+                  <td className="p-3 whitespace-nowrap"><SubscriptionBadge type={m.subscription_type} /></td>
+                  <td className="p-3 whitespace-nowrap hidden sm:table-cell text-slate-400 text-sm">
                     {m.start_date ? new Date(m.start_date).toLocaleDateString() : '—'}
                   </td>
-                  <td className="p-4 hidden lg:table-cell text-slate-400 text-sm">
+                  <td className="p-3 whitespace-nowrap hidden lg:table-cell text-slate-400 text-sm">
                     {m._computedEndDate ? new Date(m._computedEndDate).toLocaleDateString() : '—'}
                   </td>
-                  <td className="p-4">
+                  <td className="p-3 whitespace-nowrap">
                     <div className="flex flex-col gap-1 items-start">
                       <StatusBadge state={m._state} />
                       <div className="flex items-center gap-1">
@@ -1131,14 +1053,14 @@ export default function Memberships() {
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 text-electric-green font-semibold">${m.amount_paid}</td>
-                  <td className="p-4 hidden xl:table-cell text-slate-400 text-sm max-w-[180px]">
+                  <td className="p-3 whitespace-nowrap text-electric-green font-semibold">${m.amount_paid}</td>
+                  <td className="p-3 whitespace-nowrap hidden xl:table-cell text-slate-400 text-sm max-w-[180px]">
                     {m.description
                       ? <span className="block truncate" title={m.description}>{m.description}</span>
                       : <span className="text-slate-600">—</span>}
                   </td>
-                  <td className="p-4">
-                    <div className="flex justify-end gap-1">
+                  <td className="p-3 whitespace-nowrap">
+                    <div className="flex justify-end gap-1 flex-nowrap">
                       <button onClick={() => setDetailMember(m)} className="p-2 text-slate-400 hover:text-white transition-colors" title="View details">
                         <Eye size={17} />
                       </button>
