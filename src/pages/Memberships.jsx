@@ -29,7 +29,9 @@ export function getMembershipState(member) {
 export function computeEndDate(member) {
   if (!member.start_date) return member.end_date || null
   if (member.subscription_type === 'custom') return member.end_date || null
-  const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 32, family: 32 }
+  
+  // Updated duration map: 8 days for 1 week, 16 days for 2 weeks, 23 days for 3 weeks
+  const durationMap = { daily: 1, weekly: 8, biweekly: 16, triweekly: 23, monthly: 32, family: 32 }
   const days = durationMap[member.subscription_type] ?? 0
   if (days === 0) return member.end_date || null
   const start = new Date(member.start_date)
@@ -326,7 +328,8 @@ function RenewModal({ member, onClose, onSuccess }) {
     if (isCustom) {
       endDateStr = customEndDate
     } else {
-      const durationMap = { daily: 1, weekly: 7, biweekly: 14, triweekly: 21, monthly: 32, family: 32 }
+      // Updated duration map: 8 days for 1 week, 16 days for 2 weeks, 23 days for 3 weeks
+      const durationMap = { daily: 1, weekly: 8, biweekly: 16, triweekly: 23, monthly: 32, family: 32 }
       const start = new Date(startDate)
       start.setDate(start.getDate() + durationMap[subscriptionType])
       endDateStr = start.toISOString().split('T')[0]

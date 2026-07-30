@@ -1,4 +1,4 @@
-// membermodel.jsx
+// membermodal.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { X, Printer, Check, Plus } from 'lucide-react'
@@ -112,7 +112,9 @@ export default function MemberModal({ member, onClose }) {
     if (isCustom) {
       endDateObj = new Date(formData.end_date)
     } else {
-      const duration = formData.subscription_type === 'daily' ? 1 : formData.subscription_type === 'weekly' ? 7 : formData.subscription_type === 'biweekly' ? 14 : formData.subscription_type === 'triweekly' ? 21 : 32
+      // Updated duration map: 8 days for 1 week, 16 days for 2 weeks, 23 days for 3 weeks
+      const durationMap = { daily: 1, weekly: 8, biweekly: 16, triweekly: 23, monthly: 32, family: 32 }
+      const duration = durationMap[formData.subscription_type] || 32
       const startDateObj = new Date(formData.start_date)
       endDateObj = new Date(startDateObj)
       endDateObj.setDate(endDateObj.getDate() + duration)
@@ -149,18 +151,18 @@ export default function MemberModal({ member, onClose }) {
       end_date: endDateObj.toISOString().split('T')[0]
     }
 
-   let result
-if (member) {
-  // Editing an existing member's details isn't a new payment —
-  // don't touch last_payment_at here.
-  result = await supabase.from('members').update(payload).eq('id', member.id)
-} else {
-  // Brand new member = a payment was just collected right now.
-  result = await supabase.from('members').insert([{
-    ...payload,
-    last_payment_at: new Date().toISOString(),
-  }])
-}
+    let result
+    if (member) {
+      // Editing an existing member's details isn't a new payment —
+      // don't touch last_payment_at here.
+      result = await supabase.from('members').update(payload).eq('id', member.id)
+    } else {
+      // Brand new member = a payment was just collected right now.
+      result = await supabase.from('members').insert([{
+        ...payload,
+        last_payment_at: new Date().toISOString(),
+      }])
+    }
 
     setLoading(false)
 
@@ -175,30 +177,30 @@ if (member) {
   if (savedMember) {
     return (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-        <div className="bg-navy-800 rounded-xl w-full max-w-md p-6 border border-navy-700">
+        <div className="bg-white dark:bg-navy-800 rounded-xl w-full max-w-md p-6 border border-slate-200 dark:border-navy-700 transition-colors">
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="w-12 h-12 rounded-full bg-electric-green/20 flex items-center justify-center mb-3">
-              <Check size={28} className="text-electric-green" />
+            <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-electric-green/20 flex items-center justify-center mb-3 transition-colors">
+              <Check size={28} className="text-emerald-500 dark:text-electric-green" />
             </div>
-            <h3 className="text-xl font-bold text-white">Member Saved</h3>
-            <p className="text-slate-400 text-sm mt-1">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white transition-colors">Member Saved</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 transition-colors">
               {savedMember.first_name} {savedMember.last_name} — ${Number(savedMember.amount_paid).toFixed(2)} paid
             </p>
           </div>
 
           <button
             onClick={() => printReceiptViaRawBT(savedMember, settings)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 mb-3"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 dark:bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 mb-3 transition-colors"
           >
             <Printer size={20} /> Print Receipt (Bluetooth)
           </button>
-          <p className="text-xs text-slate-500 text-center mb-4">
+          <p className="text-xs text-slate-400 dark:text-slate-500 text-center mb-4 transition-colors">
             Sends the receipt to RawBT, which relays it to your paired Bluetooth printer.
           </p>
 
           <button
             onClick={onClose}
-            className="w-full px-4 py-2 text-slate-400 hover:text-white border border-navy-700 rounded-lg"
+            className="w-full px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-navy-700 rounded-lg transition-colors"
           >
             Done
           </button>
@@ -209,14 +211,14 @@ if (member) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <div className="bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-navy-700 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-navy-800 rounded-xl w-full max-w-lg p-6 border border-slate-200 dark:border-navy-700 max-h-[90vh] overflow-y-auto transition-colors">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-white">{member ? 'Edit Member' : 'Add New Member'}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
+          <h3 className="text-xl font-bold text-slate-900 dark:text-white transition-colors">{member ? 'Edit Member' : 'Add New Member'}</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"><X size={24} /></button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm">
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-700 rounded-lg text-red-600 dark:text-red-300 text-sm transition-colors">
             {error}
           </div>
         )}
@@ -225,8 +227,8 @@ if (member) {
           {!isFamily && (
             <>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">
-                  Full Name {isDaily && <span className="text-slate-600">(optional for daily)</span>}
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">
+                  Full Name {isDaily && <span className="text-slate-400 dark:text-slate-600">(optional for daily)</span>}
                 </label>
                 <input
                   type="text"
@@ -235,15 +237,22 @@ if (member) {
                   onChange={handleFullNameChange}
                   required={!isDaily}
                   placeholder="e.g. John Smith"
-                  className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+                  className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-slate-400 mb-1">
-                  Phone Number {isDaily && <span className="text-slate-600">(optional for daily)</span>}
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">
+                  Phone Number {isDaily && <span className="text-slate-400 dark:text-slate-600">(optional for daily)</span>}
                 </label>
-                <input type="text" name="phone_number" value={formData.phone_number} onChange={handleChange} required={!isDaily} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+                <input 
+                  type="text" 
+                  name="phone_number" 
+                  value={formData.phone_number} 
+                  onChange={handleChange} 
+                  required={!isDaily} 
+                  className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" 
+                />
               </div>
             </>
           )}
@@ -251,7 +260,7 @@ if (member) {
           {isFamily && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Family Members <span className="text-slate-600">(3 names)</span></label>
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Family Members <span className="text-slate-400 dark:text-slate-600">(3 names)</span></label>
                 <div className="space-y-2">
                   {[0, 1, 2].map(i => (
                     <input
@@ -261,13 +270,13 @@ if (member) {
                       onChange={e => setFamilyNames(n => n.map((v, idx) => (idx === i ? e.target.value : v)))}
                       required={i === 0}
                       placeholder={`Member ${i + 1} full name${i === 0 ? '' : ' (optional)'}`}
-                      className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+                      className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors"
                     />
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Phone Numbers <span className="text-slate-600">(optional)</span></label>
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Phone Numbers <span className="text-slate-400 dark:text-slate-600">(optional)</span></label>
                 <div className="space-y-2">
                   {familyPhones.map((phone, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -276,17 +285,17 @@ if (member) {
                         value={phone}
                         onChange={e => setFamilyPhones(p => p.map((v, idx) => (idx === i ? e.target.value : v)))}
                         placeholder="e.g. +961 70 123 456"
-                        className="flex-1 bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600"
+                        className="flex-1 bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors"
                       />
                       {familyPhones.length > 1 && (
-                        <button type="button" onClick={() => setFamilyPhones(p => p.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-red-400" title="Remove">
+                        <button type="button" onClick={() => setFamilyPhones(p => p.filter((_, idx) => idx !== i))} className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Remove">
                           <X size={18} />
                         </button>
                       )}
                     </div>
                   ))}
                 </div>
-                <button type="button" onClick={() => setFamilyPhones(p => [...p, ''])} className="mt-2 flex items-center gap-1 text-sm text-electric-blue hover:opacity-80">
+                <button type="button" onClick={() => setFamilyPhones(p => [...p, ''])} className="mt-2 flex items-center gap-1 text-sm text-blue-600 dark:text-electric-blue hover:opacity-80 transition-colors">
                   <Plus size={16} /> Add phone number
                 </button>
               </div>
@@ -294,8 +303,8 @@ if (member) {
           )}
 
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Subscription Type</label>
-            <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
+            <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Subscription Type</label>
+            <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors">
               <option value="daily">Daily - ${FIXED_PRICES.daily}</option>
               <option value="weekly">Weekly - ${FIXED_PRICES.weekly}</option>
               <option value="biweekly">2 Weeks - ${FIXED_PRICES.biweekly}</option>
@@ -309,42 +318,42 @@ if (member) {
           {isCustom ? (
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Start Date</label>
-                <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Start Date</label>
+                <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">End Date</label>
-                <input type="date" name="end_date" value={formData.end_date} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">End Date</label>
+                <input type="date" name="end_date" value={formData.end_date} onChange={handleChange} required className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Custom Price ($)</label>
-                <input type="number" name="base_price" value={formData.base_price} onChange={handleChange} required min="0" step="0.01" className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Custom Price ($)</label>
+                <input type="number" name="base_price" value={formData.base_price} onChange={handleChange} required min="0" step="0.01" className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
               </div>
             </div>
           ) : (
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Start Date</label>
-              <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white" />
+              <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Start Date</label>
+              <input type="date" name="start_date" value={formData.start_date} onChange={handleChange} required className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
             </div>
           )}
 
           {!isCustom && (
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Base Price ($)</label>
-                <input type="number" name="base_price" value={formData.base_price} onChange={handleChange} required disabled className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white disabled:opacity-50" />
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Base Price ($)</label>
+                <input type="number" name="base_price" value={formData.base_price} onChange={handleChange} required disabled className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white disabled:opacity-50 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Discount Type</label>
-                <select name="discount_type" value={formData.discount_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Discount Type</label>
+                <select name="discount_type" value={formData.discount_type} onChange={handleChange} className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors">
                   <option value="none">None</option>
                   <option value="percentage">Percentage (%)</option>
                   <option value="fixed">Fixed ($)</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Discount Value</label>
-                <input type="number" name="discount_value" value={formData.discount_value} onChange={handleChange} disabled={formData.discount_type === 'none'} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white disabled:opacity-50" />
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Discount Value</label>
+                <input type="number" name="discount_value" value={formData.discount_value} onChange={handleChange} disabled={formData.discount_type === 'none'} className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white disabled:opacity-50 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
               </div>
             </div>
           )}
@@ -352,33 +361,33 @@ if (member) {
           {isCustom && (
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Discount Type</label>
-                <select name="discount_type" value={formData.discount_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Discount Type</label>
+                <select name="discount_type" value={formData.discount_type} onChange={handleChange} className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors">
                   <option value="none">None</option>
                   <option value="percentage">Percentage (%)</option>
                   <option value="fixed">Fixed ($)</option>
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Discount Value</label>
-                <input type="number" name="discount_value" value={formData.discount_value} onChange={handleChange} disabled={formData.discount_type === 'none'} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white disabled:opacity-50" />
+                <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Discount Value</label>
+                <input type="number" name="discount_value" value={formData.discount_value} onChange={handleChange} disabled={formData.discount_type === 'none'} className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white disabled:opacity-50 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
               </div>
             </div>
           )}
 
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Description <span className="text-slate-600">(optional)</span></label>
-            <textarea name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="Any notes about this membership..." className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white resize-none placeholder:text-slate-600" />
+            <label className="block text-sm text-slate-500 dark:text-slate-400 mb-1 transition-colors">Description <span className="text-slate-400 dark:text-slate-600">(optional)</span></label>
+            <textarea name="description" value={formData.description} onChange={handleChange} rows={3} placeholder="Any notes about this membership..." className="w-full bg-slate-50 dark:bg-navy-900 border border-slate-200 dark:border-navy-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white resize-none placeholder-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-blue-500 dark:focus:border-electric-blue transition-colors" />
           </div>
 
-          <div className="bg-navy-900 p-4 rounded-lg flex justify-between items-center">
-            <span className="text-slate-400">Final Amount Paid:</span>
-            <span className="text-2xl font-bold text-electric-green">${amountPaid.toFixed(2)}</span>
+          <div className="bg-slate-50 dark:bg-navy-900 p-4 rounded-lg flex justify-between items-center transition-colors">
+            <span className="text-slate-500 dark:text-slate-400 transition-colors">Final Amount Paid:</span>
+            <span className="text-2xl font-bold text-emerald-500 dark:text-electric-green transition-colors">${amountPaid.toFixed(2)}</span>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-400 hover:text-white">Cancel</button>
-            <button type="submit" disabled={loading} className="px-6 py-2 bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">Cancel</button>
+            <button type="submit" disabled={loading} className="px-6 py-2 bg-blue-600 dark:bg-electric-blue text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 transition-colors">
               {loading ? 'Saving...' : 'Save Member'}
             </button>
           </div>
