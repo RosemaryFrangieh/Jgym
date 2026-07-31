@@ -1,4 +1,3 @@
-// membermodal.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { X, Printer, Check, Plus } from 'lucide-react'
@@ -28,7 +27,7 @@ function parseFamilyDescription(description) {
   return result
 }
 
-export default function MemberModal({ member, onClose }) {
+export default function MemberModal({ member, onClose, onSaved }) {
   const { settings } = useSettings()
   const FIXED_PRICES = settings.membershipPrices
   const [fullName, setFullName] = useState('')
@@ -170,6 +169,9 @@ export default function MemberModal({ member, onClose }) {
       setError(result.error.message)
       return
     }
+
+    // Let the parent list know a member was added/edited so it can refetch.
+    if (onSaved) onSaved()
 
     setSavedMember(payload)
   }

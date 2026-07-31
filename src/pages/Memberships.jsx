@@ -54,11 +54,11 @@ function formatYearMonth(ym) {
 
 function monthBounds(ym) {
   const [y, m] = ym.split('-').map(Number)
-  const first = new Date(y, m - 1, 1)
-  const last  = new Date(y, m, 0)
+  const pad = (n) => String(n).padStart(2, '0')
+  const daysInMonth = new Date(y, m, 0).getDate() // just reading a day-count, no toISOString round-trip
   return {
-    from: first.toISOString().split('T')[0],
-    to:   last.toISOString().split('T')[0],
+    from: `${y}-${pad(m)}-01`,
+    to:   `${y}-${pad(m)}-${pad(daysInMonth)}`,
   }
 }
 
