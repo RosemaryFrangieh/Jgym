@@ -132,25 +132,23 @@ function receiptNumberFrom(member) {
   return String(Date.now()).slice(-6)
 }
 
-// ─── Send one payload to RawBT ─────────────────────────────────────────
-// Small helper so both the text job and the QR job go through the exact
-// same encode/dispatch path.
-function sendToRawBT(chunks) {
-  const encoded = bytesToBase64(concatBytes(chunks))
-  window.location.href = `rawbt:base64,${encoded}`
-}
-
 // ─── Main entry point ─────────────────────────────────────────────────
 // @param member   member record
 // @param settings full settings object from SettingsContext ({ gymName, receiptTemplate })
 //
-// NOTE: the receipt text and the Instagram QR are now sent to RawBT as TWO
-// separate jobs (with a short delay between them) instead of one combined
-// payload. Packing everything into a single base64 blob meant that on long
-// receipts (family plans, long notes) the QR bytes — appended at the very
-// end of the stream — were the part most likely to get silently dropped or
-// truncated by RawBT/the printer, while the receipt text above them still
-// printed fine. Sending the QR as its own small job avoids that.
+// NOTE: text + QR are sent to RawBT as ONE combined payload again (back to
+// the original approach). A previous attempt to split them into two separate
+// `location.href` calls, with the second one fired from inside a setTimeout,
+// turned out to break the QR job completely: Android's WebView/Chrome
+// silently drops a custom-scheme navigation (`rawbt:...`) once it's no
+// longer part of the same navigation chain as the click that triggered
+// printing. So: one call, like before.
+//
+// Added: the exact payload size is now logged to the console on every print.
+// Next time the QR goes missing, check the console log for that print and
+// compare the byte count to a print where the QR worked — that will tell us
+// whether this is really a size/truncation issue on RawBT's end or something
+// else (e.g. a printer/RawBT quirk unrelated to payload length).
 export async function printReceiptViaRawBT(member, settings = {}) {
   const tpl = { ...DEFAULT_RECEIPT_TEMPLATE, ...(settings.receiptTemplate || {}) }
   const width = PAPER_WIDTHS[tpl.paperWidth] || PAPER_WIDTHS['58mm']
@@ -164,33 +162,33 @@ export async function printReceiptViaRawBT(member, settings = {}) {
 
   try {
     const enc = new TextEncoder()
+    const chunks = [enc.encode(text + '\n')]
 
-    // ── Job 1: receipt text ──
-    sendToRawBT([enc.encode(text + '\n\n')])
-
-    // ── Job 2: Instagram QR, sent separately after a short delay so RawBT
-    // has time to flush job 1 before job 2 arrives. ──
+    let qrIncluded = false
     if (tpl.showInstagramQR && tpl.instagramUrl) {
       const cleanUrl = sanitizeInstagramUrl(tpl.instagramUrl)
       if (cleanUrl) {
-        setTimeout(() => {
-          try {
-            const qrChunks = []
-            if (tpl.instagramCaption) {
-              qrChunks.push(enc.encode(centerForWidth(tpl.instagramCaption, width) + '\n'))
-            }
-            // Bigger QR on wide paper.
-            qrChunks.push(escposQRCode(cleanUrl, { size: tpl.paperWidth === '80mm' ? 8 : 6 }))
-            qrChunks.push(enc.encode('\n\n\n'))
-            sendToRawBT(qrChunks)
-          } catch (err) {
-            console.error('RawBT QR print failed:', err)
-          }
-        }, 400) // bump this up (e.g. 800) if the QR is still dropped on slower printers
+        if (tpl.instagramCaption) {
+          chunks.push(enc.encode(centerForWidth(tpl.instagramCaption, width) + '\n'))
+        }
+        // Bigger QR on wide paper.
+        chunks.push(escposQRCode(cleanUrl, { size: tpl.paperWidth === '80mm' ? 8 : 6 }))
+        qrIncluded = true
       } else {
         console.warn('showInstagramQR is on but instagramUrl sanitized to empty — skipping QR.')
       }
     }
+
+    chunks.push(enc.encode('\n\n\n'))
+    const combined = concatBytes(chunks)
+    const encoded = bytesToBase64(combined)
+
+    console.log(
+      `[receipt print] "${member.first_name || 'walk-in'} ${member.last_name || ''}" — ` +
+      `${combined.length} raw bytes, ${encoded.length} base64 chars, QR included: ${qrIncluded}`
+    )
+
+    window.location.href = `rawbt:base64,${encoded}`
   } catch (err) {
     console.error('RawBT print failed, falling back to browser print dialog:', err)
     fallbackBrowserPrint(text)
