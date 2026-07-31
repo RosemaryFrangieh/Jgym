@@ -4,7 +4,7 @@
 //
 // Drop-in replacement: it still exports DEFAULT_RECEIPT_TEMPLATE and
 // buildReceiptText (re-exported from the core), plus printReceiptViaRawBT.
-​
+
 import { supabase } from '../supabaseClient'
 import {
   DEFAULT_RECEIPT_TEMPLATE,
@@ -14,7 +14,7 @@ import {
   buildAllDemoReceipts,
   DEMO_CASES,
 } from './receiptCore'
-​
+
 export {
   DEFAULT_RECEIPT_TEMPLATE,
   PAPER_WIDTHS,
@@ -23,7 +23,7 @@ export {
   buildAllDemoReceipts,
   DEMO_CASES,
 }
-​
+
 // ─── Family fetch (more robust than before) ───────────────────────────────
 // Old logic matched on start_date + end_date + subscription_type, which can
 // accidentally group two unrelated families that share the same dates.
@@ -50,7 +50,7 @@ async function fetchFamilyMembers(member) {
   }
   return []
 }
-​
+
 // ─── ESC/POS QR code ──────────────────────────────────────────────────
 function concatBytes(chunks) {
   let total = 0
@@ -87,7 +87,7 @@ function escposQRCode(dataStr, { size = 6, errorCorrection = 0x31 } = {}) {
   ])
   return concatBytes([header, data, footer])
 }
-​
+
 function sanitizeInstagramUrl(rawUrl) {
   let url = (rawUrl || '').trim()
   if (!url) return ''
@@ -95,17 +95,18 @@ function sanitizeInstagramUrl(rawUrl) {
   try {
     const u = new URL(url)
     return u.origin + u.pathname   // drop ?igsh=... which breaks some scanners
-  } catch {
+  } catch (err) {
+    console.error('Instagram URL failed to parse, using raw value:', rawUrl, err)
     return url
   }
 }
-​
+
 function centerForWidth(text, width) {
   const t = String(text ?? '')
   if (t.length >= width) return t
   return ' '.repeat(Math.floor((width - t.length) / 2)) + t
 }
-​
+
 // ─── Fallback browser print ─────────────────────────────────────────
 function fallbackBrowserPrint(text) {
   const w = window.open('', '_blank', 'width=380,height=600')
@@ -123,47 +124,75 @@ function fallbackBrowserPrint(text) {
   w.focus()
   w.print()
 }
-​
+
 // ─── Optional: generate a short human receipt number ──────────────────────────
 function receiptNumberFrom(member) {
   if (member.receipt_no) return member.receipt_no
   if (member.id != null) return String(member.id).slice(-6)
   return String(Date.now()).slice(-6)
 }
-​
+
+// ─── Send one payload to RawBT ─────────────────────────────────────────
+// Small helper so both the text job and the QR job go through the exact
+// same encode/dispatch path.
+function sendToRawBT(chunks) {
+  const encoded = bytesToBase64(concatBytes(chunks))
+  window.location.href = `rawbt:base64,${encoded}`
+}
+
 // ─── Main entry point ─────────────────────────────────────────────────
 // @param member   member record
 // @param settings full settings object from SettingsContext ({ gymName, receiptTemplate })
+//
+// NOTE: the receipt text and the Instagram QR are now sent to RawBT as TWO
+// separate jobs (with a short delay between them) instead of one combined
+// payload. Packing everything into a single base64 blob meant that on long
+// receipts (family plans, long notes) the QR bytes — appended at the very
+// end of the stream — were the part most likely to get silently dropped or
+// truncated by RawBT/the printer, while the receipt text above them still
+// printed fine. Sending the QR as its own small job avoids that.
 export async function printReceiptViaRawBT(member, settings = {}) {
   const tpl = { ...DEFAULT_RECEIPT_TEMPLATE, ...(settings.receiptTemplate || {}) }
   const width = PAPER_WIDTHS[tpl.paperWidth] || PAPER_WIDTHS['58mm']
-​
+
   const familyMembers = member.subscription_type === 'family'
     ? await fetchFamilyMembers(member)
     : []
-​
+
   const meta = { receiptNo: receiptNumberFrom(member), dateTime: new Date() }
   const text = buildReceiptText(member, familyMembers, settings, meta)
-​
+
   try {
     const enc = new TextEncoder()
-    const chunks = [enc.encode(text + '\n')]
-​
+
+    // ── Job 1: receipt text ──
+    sendToRawBT([enc.encode(text + '\n\n')])
+
+    // ── Job 2: Instagram QR, sent separately after a short delay so RawBT
+    // has time to flush job 1 before job 2 arrives. ──
     if (tpl.showInstagramQR && tpl.instagramUrl) {
       const cleanUrl = sanitizeInstagramUrl(tpl.instagramUrl)
-      if (tpl.instagramCaption) {
-        chunks.push(enc.encode(centerForWidth(tpl.instagramCaption, width) + '\n'))
+      if (cleanUrl) {
+        setTimeout(() => {
+          try {
+            const qrChunks = []
+            if (tpl.instagramCaption) {
+              qrChunks.push(enc.encode(centerForWidth(tpl.instagramCaption, width) + '\n'))
+            }
+            // Bigger QR on wide paper.
+            qrChunks.push(escposQRCode(cleanUrl, { size: tpl.paperWidth === '80mm' ? 8 : 6 }))
+            qrChunks.push(enc.encode('\n\n\n'))
+            sendToRawBT(qrChunks)
+          } catch (err) {
+            console.error('RawBT QR print failed:', err)
+          }
+        }, 400) // bump this up (e.g. 800) if the QR is still dropped on slower printers
+      } else {
+        console.warn('showInstagramQR is on but instagramUrl sanitized to empty — skipping QR.')
       }
-      // Bigger QR on wide paper.
-      chunks.push(escposQRCode(cleanUrl, { size: tpl.paperWidth === '80mm' ? 8 : 6 }))
     }
-​
-    chunks.push(enc.encode('\n\n\n'))
-    const encoded = bytesToBase64(concatBytes(chunks))
-    window.location.href = `rawbt:base64,${encoded}`
   } catch (err) {
     console.error('RawBT print failed, falling back to browser print dialog:', err)
     fallbackBrowserPrint(text)
   }
 }
-​
