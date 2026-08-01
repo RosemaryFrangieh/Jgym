@@ -157,7 +157,7 @@ export default function ClassMemberModal({ member, onClose }) {
               value={fullName}
               onChange={handleFullNameChange}
               required={!isDaily}
-              placeholder="e.g. John Smith"
+              placeholder=""
               className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white placeholder:text-slate-600 focus:outline-none focus:border-electric-blue"
             />
           </div>
