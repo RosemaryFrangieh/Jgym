@@ -517,6 +517,19 @@ export default function Classes() {
               >{s}</button>
             ))}
           </div>
+          <div className="flex items-center gap-2">
+            {PLAN_TYPES.map(t => (
+              <button key={t} onClick={() => handleFilterChange('planType', t)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
+                  filters.planType === t
+                    ? t === 'daily' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40'
+                      : t === 'monthly' ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                      : 'bg-electric-blue text-white'
+                    : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
+                }`}
+              >{t}</button>
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -524,14 +537,6 @@ export default function Classes() {
             <button key={t} onClick={() => handleFilterChange('classType', t)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
                 filters.classType === t ? 'bg-electric-blue text-white' : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
-              }`}
-            >{t}</button>
-          ))}
-          <span className="text-slate-700">|</span>
-          {PLAN_TYPES.map(t => (
-            <button key={t} onClick={() => handleFilterChange('planType', t)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
-                filters.planType === t ? 'bg-electric-blue text-white' : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
               }`}
             >{t}</button>
           ))}
