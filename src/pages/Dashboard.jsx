@@ -26,10 +26,13 @@ const toWhatsAppNumber = (raw) => {
 }
 ​
 // The pre-filled reminder message — edit the wording however you like
-const buildReminderMessage = (m, daysLabel) => {
-  const name = `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'there'
-  const endDate = new Date(computeEndDate(m)).toLocaleDateString()
-  return `Hello ${name}, this is a friendly reminder from ${GYM_NAME}. Your ${m.subscription_type} membership expires on ${endDate} (${daysLabel.toLowerCase()}). Please renew to keep your access with no interruption. See you at the gym! 💪`
+const buildReminderMessage = (m) => {
+  const name = `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'Member'
+  const endDate = new Date(computeEndDate(m)).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+  const subscriptionType = m.subscription_type
+    ? m.subscription_type.charAt(0).toUpperCase() + m.subscription_type.slice(1)
+    : ''
+  return `Dear ${name},\nYour ${subscriptionType} ${GYM_NAME} subscription is valid until ${endDate}. Renew at your convenience, Thank you!`
 }
 ​
 const localDateKey = (d) => {
@@ -149,8 +152,7 @@ export default function Dashboard() {
   const sendWhatsApp = (m) => {
     const number = toWhatsAppNumber(m.phone_number)
     if (!number) { alert('This member has no valid phone number saved.'); return }
-    const daysLabel = getDaysLabel(getDaysRemaining(computeEndDate(m)))
-    const text = encodeURIComponent(buildReminderMessage(m, daysLabel))
+    const text = encodeURIComponent(buildReminderMessage(m))
     window.open(`https://wa.me/${number}?text=${text}`, '_blank')
     // Mark this membership cycle as reminded and persist it
     setSentReminders(prev => {
@@ -292,8 +294,6 @@ export default function Dashboard() {
                     <p className={`text-xs font-medium ${getDaysColor(daysLeft)}`}>{getDaysLabel(daysLeft)}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3 shrink-0">
-                    {/* WhatsApp button temporarily hidden - functionality kept in sendWhatsApp(). Change false -> true to restore. */}
-                    {false && (
                     <button
                       onClick={() => sendWhatsApp(m)}
                       title={sent ? 'Reminder sent — click to send again' : 'Send WhatsApp reminder'}
@@ -302,7 +302,6 @@ export default function Dashboard() {
                       {sent ? <Check size={14} /> : <MessageCircle size={14} />}
                       <span className="hidden sm:inline">{sent ? 'Sent' : 'WhatsApp'}</span>
                     </button>
-                    )}
                     <button onClick={() => handleRenew(m)} className="flex items-center gap-1.5 px-3 py-1.5 bg-electric-blue/10 text-electric-blue rounded-lg text-sm font-medium hover:bg-electric-blue/20 transition-colors">
                       <RefreshCw size={14} /><span className="hidden sm:inline">Renew</span>
                     </button>
