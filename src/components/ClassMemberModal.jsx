@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { X } from 'lucide-react'
 import { useSettings } from '../context/SettingsContext'
 
-const DURATION_DAYS = { daily: 0, monthly: 30 }
+const DURATION_DAYS = { daily: 0, biweekly: 14, monthly: 30 }
 
 export default function ClassMemberModal({ member, onClose }) {
   const { settings } = useSettings()
@@ -183,6 +183,7 @@ export default function ClassMemberModal({ member, onClose }) {
               <select name="subscription_type" value={formData.subscription_type} onChange={handleChange} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
                 {/* Dynamically display prices based on the selected class type */}
                 <option value="daily">Daily - ${FIXED_PRICES[formData.class_type]?.daily ?? 0}</option>
+                <option value="biweekly">2 Weeks - ${FIXED_PRICES[formData.class_type]?.biweekly ?? 0}</option>
                 <option value="monthly">Monthly - ${FIXED_PRICES[formData.class_type]?.monthly ?? 0}</option>
               </select>
             </div>

@@ -12,8 +12,8 @@ export const DEFAULT_SETTINGS = {
   membershipPrices: { daily: 7, weekly: 17, biweekly: 25, triweekly: 32, monthly: 40, family: 100 },
   classTypes: ['aerobics', 'zumba'],
   classPrices: {
-    aerobics: { daily: 5, monthly: 60 },
-    zumba:    { daily: 5, monthly: 40 },
+    aerobics: { daily: 5, biweekly: 30, monthly: 60 },
+    zumba:    { daily: 5, biweekly: 0, monthly: 40 },
   },
   receiptTemplate: { ...DEFAULT_RECEIPT_TEMPLATE },
 }

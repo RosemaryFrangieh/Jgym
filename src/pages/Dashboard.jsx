@@ -1,36 +1,37 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import MemberModal from '../components/MemberModal'
+import NotesPanel from '../components/NotesPanel'
 import { useAuth } from '../context/AuthContext'
-import { Users, UserPlus, AlertTriangle, Calendar, RefreshCw, ShoppingBag, ShoppingCart, Plus, Minus, MessageCircle, Check, Trash2, X } from 'lucide-react'
+import { Users, UserPlus, AlertTriangle, Calendar, RefreshCw, ShoppingBag, ShoppingCart, Plus, Minus, MessageCircle, Check, Trash2, X, LayoutDashboard, StickyNote } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { computeEndDate } from './Memberships'
-import { useSettings } from '../context/SettingsContext'
-
+​
 const TABLE_COLORS = ['#3b82f6', '#00ff88', '#f97316', '#a855f7', '#ec4899', '#eab308']
 const UNIT_LABEL = { piece: 'units', kg: 'kg', liter: 'L', session: 'sessions', month: 'months' }
-
-// ─── WhatsApp reminder helpers — gym name & country code now come from Settings ──
+​
+// ─── WhatsApp reminder settings — edit these to match your gym ──────────────────
+const WHATSAPP_COUNTRY_CODE = '961' // Lebanon; used only when a saved number has no country code
+const GYM_NAME = 'J-Gym'
+​
 // Turn a saved phone number into a wa.me-friendly international number (digits only, no +)
-const toWhatsAppNumber = (raw, countryCode) => {
+const toWhatsAppNumber = (raw) => {
   let digits = (raw || '').replace(/\D/g, '')
   if (!digits) return ''
   digits = digits.replace(/^0+/, '')
-  if (countryCode && !digits.startsWith(countryCode) && digits.length <= 8) {
-    digits = countryCode + digits
+  if (WHATSAPP_COUNTRY_CODE && !digits.startsWith(WHATSAPP_COUNTRY_CODE) && digits.length <= 8) {
+    digits = WHATSAPP_COUNTRY_CODE + digits
   }
   return digits
 }
-
-// The pre-filled reminder message — updated to match requested template
-const buildReminderMessage = (m, gymName) => {
-  const name = `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'member'
-  const subType = m.subscription_type.charAt(0).toUpperCase() + m.subscription_type.slice(1)
-  // Formats date as "July 30"
-  const endDate = new Date(computeEndDate(m)).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-  return `Dear ${name},\nYour ${subType} ${gymName} subscription is valid until ${endDate}. Renew at your convenience, Thank you!`
+​
+// The pre-filled reminder message — edit the wording however you like
+const buildReminderMessage = (m, daysLabel) => {
+  const name = `${m.first_name || ''} ${m.last_name || ''}`.trim() || 'there'
+  const endDate = new Date(computeEndDate(m)).toLocaleDateString()
+  return `Hello ${name}, this is a friendly reminder from ${GYM_NAME}. Your ${m.subscription_type} membership expires on ${endDate} (${daysLabel.toLowerCase()}). Please renew to keep your access with no interruption. See you at the gym! 💪`
 }
-
+​
 const localDateKey = (d) => {
   const dt = d instanceof Date ? d : new Date(d)
   const y = dt.getFullYear()
@@ -41,16 +42,20 @@ const localDateKey = (d) => {
 const todayKey = () => localDateKey(new Date())
 
 // Parses a 'YYYY-MM-DD' (date-only) value from the DB into a LOCAL midnight Date.
+// `new Date('YYYY-MM-DD')` parses as UTC midnight, which drifts against locally
+// -zeroed comparison dates depending on the browser's timezone offset — this
+// avoids that mismatch so a member never flips in/out of "expiring soon" just
+// because of where the device's clock is set.
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return null
   const [y, m, d] = String(dateStr).split('T')[0].split('-').map(Number)
   return new Date(y, m - 1, d)
 }
-
+​
 export default function Dashboard() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const { settings } = useSettings()
+  const [activeTab, setActiveTab] = useState('overview') // 'overview' | 'notes'
   const [stats, setStats] = useState({ total: 0, active: 0, newThisMonth: 0, expiring: [] })
   const [chartData, setChartData] = useState([
     { name: 'Daily', count: 0 }, { name: 'Weekly', count: 0 }, { name: 'Monthly', count: 0 }, { name: 'Custom', count: 0 }
@@ -58,32 +63,37 @@ export default function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [renewMember, setRenewMember] = useState(null)
   const [items, setItems] = useState([])
-  const [todaySales, setTodaySales] = useState({})
+  const [todaySales, setTodaySales] = useState({}) // { itemId: qty } for today only
   const [shopLoading, setShopLoading] = useState(true)
-  const [cart, setCart] = useState({})
+  const [cart, setCart] = useState({}) // { itemId: qty } for the sale being rung up
   const [saving, setSaving] = useState(false)
   const [lastSale, setLastSale] = useState(null)
-
-  // Tracks which expiring members have been sent a WhatsApp reminder
+​
+  // Tracks which expiring members have been sent a WhatsApp reminder, keyed by
+  // member id + their current end date, so it resets automatically on renewal.
   const [sentReminders, setSentReminders] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gym_expiry_reminders') || '{}') } catch { return {} }
   })
-
+​
   useEffect(() => { fetchDashboardData(); fetchShopData() }, [])
 
+  // Membership stats (esp. "Expiring Soon") depend on today's date, so a tab left
+  // open across midnight — common on a reception PC — needs to keep refetching
+  // rather than showing whatever "today" it happened to load on.
   useEffect(() => {
     const onFocus = () => fetchDashboardData()
     window.addEventListener('focus', onFocus)
-    const interval = setInterval(fetchDashboardData, 5 * 60 * 1000)
+    const interval = setInterval(fetchDashboardData, 5 * 60 * 1000) // every 5 minutes
     return () => { window.removeEventListener('focus', onFocus); clearInterval(interval) }
   }, [])
-
+​
+  // Keep shop data fresh if the Financials page (or another tab) added/edited items
   useEffect(() => {
     const onFocus = () => fetchShopData()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
-
+​
   const fetchShopData = async () => {
     setShopLoading(true)
     const tk = todayKey()
@@ -97,7 +107,7 @@ export default function Dashboard() {
     setTodaySales(salesMap)
     setShopLoading(false)
   }
-
+​
   const fetchDashboardData = async () => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const twoDaysFromNow = new Date(today); twoDaysFromNow.setDate(today.getDate() + 2); twoDaysFromNow.setHours(23, 59, 59, 999)
@@ -121,9 +131,9 @@ export default function Dashboard() {
       ])
     }
   }
-
+​
   const handleRenew = (member) => { setRenewMember(member); setIsModalOpen(true) }
-
+​
   const getDaysRemaining = (endDate) => {
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const end = parseLocalDate(endDate)
@@ -131,30 +141,32 @@ export default function Dashboard() {
   }
   const getDaysColor = (d) => d === 0 ? 'text-red-500' : d === 1 ? 'text-red-400' : d === 2 ? 'text-orange-400' : 'text-yellow-400'
   const getDaysLabel = (d) => d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `${d} days`
-
+​
   // ─── WhatsApp reminder helpers ───────────────────────────────────────────────
   const reminderKey = (m) => `${m.id}:${localDateKey(computeEndDate(m))}`
   const isReminderSent = (m) => Boolean(sentReminders[reminderKey(m)])
-
+​
   const sendWhatsApp = (m) => {
-    const number = toWhatsAppNumber(m.phone_number, settings.whatsappCountryCode)
+    const number = toWhatsAppNumber(m.phone_number)
     if (!number) { alert('This member has no valid phone number saved.'); return }
-    
-    const text = encodeURIComponent(buildReminderMessage(m, settings.gymName))
+    const daysLabel = getDaysLabel(getDaysRemaining(computeEndDate(m)))
+    const text = encodeURIComponent(buildReminderMessage(m, daysLabel))
     window.open(`https://wa.me/${number}?text=${text}`, '_blank')
-    
+    // Mark this membership cycle as reminded and persist it
     setSentReminders(prev => {
       const next = { ...prev, [reminderKey(m)]: new Date().toISOString() }
       try { localStorage.setItem('gym_expiry_reminders', JSON.stringify(next)) } catch {}
       return next
     })
   }
-
+​
+  // Today-only sales — automatically resets to 0 each new day (no row for today yet)
   const getSales = (id) => todaySales[id] ?? 0
   const getItemRevenue = (item) => getSales(item.id) * parseFloat(item.price)
   const totalItemRevenue = items.reduce((sum, item) => sum + getItemRevenue(item), 0)
   const totalItemsSoldToday = items.reduce((sum, item) => sum + getSales(item.id), 0)
-
+​
+  // Cart-based register: ring up a sale instead of editing per-item counters.
   const addToCart = (item) => setCart(prev => ({ ...prev, [item.id]: (prev[item.id] || 0) + 1 }))
   const setCartQty = (id, qty) => {
     const n = Math.max(0, parseInt(qty, 10) || 0)
@@ -167,11 +179,12 @@ export default function Dashboard() {
   }
   const removeFromCart = (id) => setCart(prev => { const next = { ...prev }; delete next[id]; return next })
   const clearCart = () => setCart({})
-
+​
   const cartLines = items.filter(it => (cart[it.id] || 0) > 0)
   const cartCount = cartLines.reduce((s, it) => s + cart[it.id], 0)
   const cartTotal = cartLines.reduce((s, it) => s + cart[it.id] * parseFloat(it.price), 0)
-
+​
+  // Commit the whole cart at once: add cart quantities on top of today's totals.
   const completeSale = async () => {
     if (cartLines.length === 0 || saving) return
     setSaving(true)
@@ -199,9 +212,33 @@ export default function Dashboard() {
     }
     setSaving(false)
   }
-
+​
   return (
     <div className="space-y-6">
+      {/* Tab bar */}
+      <div className="flex items-center gap-2 bg-navy-800 border border-navy-700 rounded-xl p-1.5 w-fit">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'overview' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <LayoutDashboard size={16} /> Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('notes')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'notes' ? 'bg-electric-blue text-white' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <StickyNote size={16} /> Notes
+        </button>
+      </div>
+
+      {activeTab === 'notes' && <NotesPanel />}
+
+      {activeTab === 'overview' && (
+      <>
       {/* Summary Cards — admin only */}
       {isAdmin && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -219,7 +256,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
+​
       <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-2' : ''} gap-6`}>
         {isAdmin && (
           <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
@@ -235,7 +272,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
         )}
-
+​
         <div className="bg-navy-800 p-6 rounded-xl border border-navy-700">
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2"><AlertTriangle size={20} className="text-orange-500" /> Expiring Soon</h3>
           <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
@@ -255,6 +292,8 @@ export default function Dashboard() {
                     <p className={`text-xs font-medium ${getDaysColor(daysLeft)}`}>{getDaysLabel(daysLeft)}</p>
                   </div>
                   <div className="flex items-center gap-2 ml-3 shrink-0">
+                    {/* WhatsApp button temporarily hidden - functionality kept in sendWhatsApp(). Change false -> true to restore. */}
+                    {false && (
                     <button
                       onClick={() => sendWhatsApp(m)}
                       title={sent ? 'Reminder sent — click to send again' : 'Send WhatsApp reminder'}
@@ -263,6 +302,7 @@ export default function Dashboard() {
                       {sent ? <Check size={14} /> : <MessageCircle size={14} />}
                       <span className="hidden sm:inline">{sent ? 'Sent' : 'WhatsApp'}</span>
                     </button>
+                    )}
                     <button onClick={() => handleRenew(m)} className="flex items-center gap-1.5 px-3 py-1.5 bg-electric-blue/10 text-electric-blue rounded-lg text-sm font-medium hover:bg-electric-blue/20 transition-colors">
                       <RefreshCw size={14} /><span className="hidden sm:inline">Renew</span>
                     </button>
@@ -273,7 +313,7 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
+​
       {/* Shop Register - point-of-sale style: tap items into a cart, then check out */}
       {items.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -316,7 +356,7 @@ export default function Dashboard() {
               })}
             </div>
           </div>
-
+​
           {/* Current sale (cart / receipt) */}
           <div className="bg-navy-800 rounded-xl border border-navy-700 flex flex-col">
             <div className="px-5 py-5 border-b border-navy-700 flex items-center justify-between">
@@ -329,7 +369,7 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
-
+​
             <div className="flex-1 p-5 space-y-2 min-h-[160px]">
               {cartLines.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center py-8">
@@ -362,7 +402,7 @@ export default function Dashboard() {
                 ))
               )}
             </div>
-
+​
             <div className="px-5 py-4 border-t border-navy-700">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-slate-400 text-sm">Total ({cartCount} item{cartCount !== 1 ? 's' : ''})</span>
@@ -379,10 +419,13 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
+​
       {isModalOpen && (
         <MemberModal member={renewMember} onClose={() => { setIsModalOpen(false); setRenewMember(null); fetchDashboardData() }} />
+      )}
+      </>
       )}
     </div>
   )
 }
+​

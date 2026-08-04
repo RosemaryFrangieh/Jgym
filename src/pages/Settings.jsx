@@ -1,5 +1,5 @@
 // Settings.jsx
-​
+
 import { useState, useEffect, useMemo } from 'react'
 import { useSettings, DEFAULT_SETTINGS } from '../context/SettingsContext'
 import {
@@ -7,7 +7,7 @@ import {
   DollarSign, Dumbbell, RotateCcw, AlertTriangle, Printer, Eye, Building
 } from 'lucide-react'
 import { buildAllDemoReceipts, DEFAULT_RECEIPT_TEMPLATE } from '../utils/receiptPrinter'
-​
+
 const MEMBERSHIP_FIELDS = [
   { key: 'daily', label: 'Daily' },
   { key: 'weekly', label: 'Weekly' },
@@ -16,9 +16,9 @@ const MEMBERSHIP_FIELDS = [
   { key: 'monthly', label: 'Monthly' },
   { key: 'family', label: 'Family Monthly' },
 ]
-​
+
 // ─── Reusable UI Components ────────────────────────────────────────
-​
+
 function Card({ icon: Icon, title, description, children }) {
   return (
     <div className="bg-navy-900 border border-navy-700/50 rounded-2xl p-6 shadow-lg">
@@ -35,7 +35,7 @@ function Card({ icon: Icon, title, description, children }) {
     </div>
   )
 }
-​
+
 function NumberField({ label, value, onChange }) {
   return (
     <div>
@@ -54,7 +54,7 @@ function NumberField({ label, value, onChange }) {
     </div>
   )
 }
-​
+
 function TextField({ label, hint, value, onChange, placeholder }) {
   return (
     <div>
@@ -69,7 +69,7 @@ function TextField({ label, hint, value, onChange, placeholder }) {
     </div>
   )
 }
-​
+
 function SelectField({ label, value, onChange, options }) {
   return (
     <div>
@@ -86,7 +86,7 @@ function SelectField({ label, value, onChange, options }) {
     </div>
   )
 }
-​
+
 function Toggle({ label, checked, onChange }) {
   return (
     <label className="flex items-center justify-between cursor-pointer py-2 group">
@@ -101,11 +101,11 @@ function Toggle({ label, checked, onChange }) {
     </label>
   )
 }
-​
+
 function SectionLabel({ children }) {
   return <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 border-b border-navy-700/50 pb-3 mb-4">{children}</h3>
 }
-​
+
 // A single thermal-paper receipt card used in the live preview.
 function ReceiptPaper({ receipt }) {
   return (
@@ -132,48 +132,48 @@ function ReceiptPaper({ receipt }) {
     </div>
   )
 }
-​
+
 // ─── Main Settings Component ──────────────────────────────────────
-​
+
 export default function Settings() {
   const { settings, loading, error, updateSettings } = useSettings()
-​
+
   const [form, setForm] = useState(settings)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [newClassType, setNewClassType] = useState('')
-​
+
   useEffect(() => {
     if (!loading) setForm(settings)
   }, [loading, settings])
-​
+
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }
-​
+
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
   const setMembershipPrice = (key, value) => setForm(prev => ({ ...prev, membershipPrices: { ...prev.membershipPrices, [key]: value } }))
   const setClassPrice = (type, key, value) => setForm(prev => ({ ...prev, classPrices: { ...prev.classPrices, [type]: { ...prev.classPrices[type], [key]: value } } }))
-​
+
   const setReceiptField = (key, value) => setForm(prev => ({
     ...prev,
     receiptTemplate: { ...prev.receiptTemplate, [key]: value },
   }))
-​
+
   const addClassType = () => {
     const name = newClassType.trim().toLowerCase()
     if (!name) return
     if (form.classTypes.includes(name)) return showToast('That class already exists.', 'error')
-​
+
     setForm(prev => ({
       ...prev,
       classTypes: [...prev.classTypes, name],
-      classPrices: { ...prev.classPrices, [name]: { daily: 0, monthly: 0 } },
+      classPrices: { ...prev.classPrices, [name]: { daily: 0, biweekly: 0, monthly: 0 } },
     }))
     setNewClassType('')
   }
-​
+
   const removeClassType = (type) => {
     if (form.classTypes.length <= 1) return showToast('You need at least one class type.', 'error')
     setForm(prev => {
@@ -186,14 +186,14 @@ export default function Settings() {
       }
     })
   }
-​
+
   // Live preview: rebuilds the Single Membership + Family Plan receipts every
   // time the gym name or ANY receipt-template field changes on the form.
   const demoReceipts = useMemo(
     () => buildAllDemoReceipts({ gymName: form.gymName, receiptTemplate: form.receiptTemplate }),
     [form.gymName, form.receiptTemplate]
   )
-​
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -206,7 +206,7 @@ export default function Settings() {
           Object.fromEntries(Object.entries(prices).map(([k, v]) => [k, parseFloat(v) || 0])),
         ])
       )
-​
+
       await updateSettings({
         gymName: form.gymName.trim() || DEFAULT_SETTINGS.gymName,
         whatsappCountryCode: form.whatsappCountryCode.trim() || DEFAULT_SETTINGS.whatsappCountryCode,
@@ -221,7 +221,7 @@ export default function Settings() {
     }
     setSaving(false)
   }
-​
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -229,10 +229,10 @@ export default function Settings() {
       </div>
     )
   }
-​
+
   return (
     <div className="min-h-screen bg-navy-950 text-slate-200">
-​
+
       {/* Sticky Header */}
       <div className="sticky top-0 z-20 backdrop-blur-md bg-navy-950/90 border-b border-navy-800">
         <div className="max-w-[1400px] mx-auto px-6 md:px-8 py-4 flex items-center justify-between">
@@ -259,10 +259,10 @@ export default function Settings() {
           </div>
         </div>
       </div>
-​
+
       {/* Top Sections (Centered) */}
       <div className="max-w-3xl mx-auto px-6 md:px-8 py-8 space-y-8">
-​
+
         {error && (
           <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 rounded-xl px-4 py-3 text-sm">
             <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
@@ -272,7 +272,7 @@ export default function Settings() {
             </div>
           </div>
         )}
-​
+
         {/* General Info */}
         <Card icon={Building} title="Gym Info" description="Basic information about your facility.">
           <div className="grid sm:grid-cols-2 gap-6">
@@ -286,7 +286,7 @@ export default function Settings() {
             />
           </div>
         </Card>
-​
+
         {/* Pricing */}
         <Card icon={DollarSign} title="Membership Pricing" description="Base prices for standard gym memberships.">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
@@ -295,7 +295,7 @@ export default function Settings() {
             ))}
           </div>
         </Card>
-​
+
         <Card icon={Dumbbell} title="Classes & Pricing" description="Manage available class types and their specific rates.">
           <div className="space-y-4">
             {form.classTypes.map(type => (
@@ -306,13 +306,14 @@ export default function Settings() {
                     <Trash2 size={14} />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <NumberField label="Daily" value={form.classPrices[type]?.daily ?? 0} onChange={v => setClassPrice(type, 'daily', v)} />
+                  <NumberField label="2 Weeks" value={form.classPrices[type]?.biweekly ?? 0} onChange={v => setClassPrice(type, 'biweekly', v)} />
                   <NumberField label="Monthly" value={form.classPrices[type]?.monthly ?? 0} onChange={v => setClassPrice(type, 'monthly', v)} />
                 </div>
               </div>
             ))}
-​
+
             <div className="flex gap-3 pt-2">
               <input
                 value={newClassType}
@@ -328,16 +329,16 @@ export default function Settings() {
           </div>
         </Card>
       </div>
-​
+
       {/* Receipt Customization Section (Full Width Split Layout) */}
       <div className="max-w-[1400px] mx-auto px-6 md:px-8 py-8 border-t border-navy-800 mt-8">
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-​
+
           {/* Form Side */}
           <div className="lg:col-span-3">
             <Card icon={Printer} title="Receipt Customization" description="Tailor the thermal printer output. Special formatting applies to family plans.">
               <div className="space-y-8">
-​
+
                 <div className="space-y-4">
                   <SectionLabel>Header Configuration</SectionLabel>
                   <div className="grid sm:grid-cols-2 gap-5">
@@ -357,7 +358,7 @@ export default function Settings() {
                     <TextField label="Currency Symbol" value={form.receiptTemplate?.currencySymbol} onChange={v => setReceiptField('currencySymbol', v)} placeholder="$" />
                   </div>
                 </div>
-​
+
                 <div className="space-y-4">
                   <SectionLabel>Family Plan Layout</SectionLabel>
                   <p className="text-xs text-slate-500 -mt-2 mb-3">Only applies to family memberships. Use <code className="bg-navy-800 px-1.5 py-0.5 rounded text-electric-blue text-[10px]">{'{n}'}</code> for the member number (1, 2, 3…).</p>
@@ -380,7 +381,7 @@ export default function Settings() {
                     <Toggle label="Show phone numbers for family members" checked={form.receiptTemplate?.showFamilyPhones ?? true} onChange={v => setReceiptField('showFamilyPhones', v)} />
                   </div>
                 </div>
-​
+
                 <div className="space-y-4">
                   <SectionLabel>Single Member Layout</SectionLabel>
                   <div className="grid sm:grid-cols-2 gap-5">
@@ -391,7 +392,7 @@ export default function Settings() {
                     <Toggle label="Show phone number for single members" checked={form.receiptTemplate?.showSinglePhone ?? true} onChange={v => setReceiptField('showSinglePhone', v)} />
                   </div>
                 </div>
-​
+
                 <div className="space-y-4">
                   <SectionLabel>Field Labels</SectionLabel>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
@@ -406,7 +407,7 @@ export default function Settings() {
                     <TextField label="Total Paid" value={form.receiptTemplate?.totalPaidLabel} onChange={v => setReceiptField('totalPaidLabel', v)} placeholder="total paid:" />
                   </div>
                 </div>
-​
+
                 <div className="space-y-4">
                   <SectionLabel>Footer & Socials</SectionLabel>
                   <div className="grid sm:grid-cols-2 gap-5">
@@ -418,18 +419,18 @@ export default function Settings() {
                     <Toggle label="Print Instagram QR code at the bottom" checked={form.receiptTemplate?.showInstagramQR ?? true} onChange={v => setReceiptField('showInstagramQR', v)} />
                   </div>
                 </div>
-​
+
                 <button
                   onClick={() => setForm(prev => ({ ...prev, receiptTemplate: { ...DEFAULT_RECEIPT_TEMPLATE } }))}
                   className="text-xs text-slate-500 hover:text-electric-blue transition-colors flex items-center gap-1.5"
                 >
                   <RotateCcw size={12} /> Reset receipt template to defaults
                 </button>
-​
+
               </div>
             </Card>
           </div>
-​
+
           {/* Sticky Preview Side — Single Membership + Family Plan */}
           <div className="hidden lg:block lg:col-span-2">
             <div className="sticky top-24 space-y-4">
@@ -437,20 +438,20 @@ export default function Settings() {
                 <Eye size={16} />
                 <span className="text-sm font-medium uppercase tracking-wider">Live Receipt Preview</span>
               </div>
-​
+
               {demoReceipts.map(r => (
                 <ReceiptPaper key={r.id} receipt={r} />
               ))}
-​
+
               <p className="text-xs text-slate-500 text-center px-4">
                 Previews use sample data and update as you edit. Actual prints use real member data on the thermal printer.
               </p>
             </div>
           </div>
-​
+
         </div>
       </div>
-​
+
       {toast && (
         <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-2xl text-sm font-medium ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-500 text-navy-950'}`}>
           {toast.msg}
@@ -459,4 +460,3 @@ export default function Settings() {
     </div>
   )
 }
-​
