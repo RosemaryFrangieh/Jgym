@@ -19,7 +19,7 @@ export function isClassExpired(endDate) {
 
 export function computeClassEndDate(member) {
   if (!member.start_date) return member.end_date || null
-  const durationMap = { daily: 0, monthly: 30 }
+  const durationMap = { daily: 0, biweekly: 14, monthly: 30 }
   const days = durationMap[member.subscription_type] ?? 0
   if (days === 0 && member.subscription_type !== 'daily') return member.end_date || null
   const start = new Date(member.start_date)
@@ -49,7 +49,7 @@ function monthBounds(ym) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 10
-const PLAN_TYPES = ['all', 'daily', 'monthly']
+const PLAN_TYPES = ['all', 'daily', 'biweekly', 'monthly']
 const DEFAULT_FILTERS = { classType: 'all', planType: 'all', statusFilter: 'all', membershipStatus: 'all' }
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
@@ -67,12 +67,13 @@ function StatusBadge({ expired }) {
 
 function PlanBadge({ type }) {
   const colors = {
-    daily:   'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-    monthly: 'bg-green-500/20 text-green-400 border-green-500/30',
+    daily:    'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+    biweekly: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    monthly:  'bg-green-500/20 text-green-400 border-green-500/30',
   }
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium border capitalize ${colors[type] ?? 'bg-slate-500/20 text-slate-400 border-slate-500/30'}`}>
-      {type}
+      {type === 'biweekly' ? '2 Weeks' : type}
     </span>
   )
 }
@@ -224,7 +225,7 @@ function RenewModal({ member, onClose, onSuccess }) {
     setError(null)
     if (infoMissing) { setError('Please enter a name and phone number for this membership.'); return }
     setLoading(true)
-    const durationMap = { daily: 0, monthly: 30 }
+    const durationMap = { daily: 0, biweekly: 14, monthly: 30 }
     const start = new Date(startDate)
     start.setDate(start.getDate() + durationMap[subscriptionType])
     const endDateStr = start.toISOString().split('T')[0]
@@ -294,6 +295,7 @@ function RenewModal({ member, onClose, onSuccess }) {
             <label className="block text-sm text-slate-400 mb-1">Plan</label>
             <select value={subscriptionType} onChange={e => setSubscriptionType(e.target.value)} className="w-full bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-white">
               <option value="daily">Daily — ${settings.classPrices[classType]?.daily ?? 0}</option>
+              <option value="biweekly">2 Weeks — ${settings.classPrices[classType]?.biweekly ?? 0}</option>
               <option value="monthly">Monthly — ${settings.classPrices[classType]?.monthly ?? 0}</option>
             </select>
           </div>
@@ -470,9 +472,9 @@ export default function Classes() {
             <p className="text-2xl font-bold text-red-400">{loading ? '—' : expiredCount}</p>
           </div>
           <div className="bg-navy-800 border border-navy-700 rounded-xl p-4">
-            <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Daily / Monthly</p>
+            <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">Daily / 2 Wks / Monthly</p>
             <p className="text-2xl font-bold text-white">
-              {loading ? '—' : `${filtered.filter(m=>m.subscription_type==='daily').length} / ${filtered.filter(m=>m.subscription_type==='monthly').length}`}
+              {loading ? '—' : `${filtered.filter(m=>m.subscription_type==='daily').length} / ${filtered.filter(m=>m.subscription_type==='biweekly').length} / ${filtered.filter(m=>m.subscription_type==='monthly').length}`}
             </p>
           </div>
         </div>
@@ -523,11 +525,12 @@ export default function Classes() {
                 className={`px-3 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
                   filters.planType === t
                     ? t === 'daily' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40'
+                      : t === 'biweekly' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
                       : t === 'monthly' ? 'bg-green-500/20 text-green-400 border border-green-500/40'
                       : 'bg-electric-blue text-white'
                     : 'bg-navy-900 text-slate-400 border border-navy-700 hover:border-slate-500'
                 }`}
-              >{t}</button>
+              >{t === 'biweekly' ? '2 Weeks' : t}</button>
             ))}
           </div>
         </div>
